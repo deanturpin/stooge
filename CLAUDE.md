@@ -8,17 +8,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Technology Stack
 
-- **Language**: Go
-- **Key Libraries**: `gopacket` for PCAP parsing
+- **Language**: C++
+- **Key Libraries**: `libpcap` for PCAP parsing
 - **Deployment**: Docker with multi-stage builds
 
 ## Planned Architecture
 
 When implemented, the codebase will follow this structure:
 
-- `main.go` - CLI entry point
-- `parser/pcap.go` - PCAP file parsing using gopacket
-- `replayer/replay.go` - Timing engine and network injection with proper TCP state handling
+- `main.cpp` - CLI entry point
+- `parser/` - PCAP file parsing using libpcap
+- `replayer/` - Timing engine and network injection with proper TCP state handling
 
 ## Core Functionality
 
@@ -30,8 +30,9 @@ The tool needs to:
 
 ## Development Commands
 
-Standard Go workflow:
-- `go build` - Build the binary
-- `go test ./...` - Run all tests
-- `go run main.go` - Run directly
+Standard C++ workflow:
+- `make` - Build the binary
+- `make test` - Run all tests
+- `make clean` - Clean build artefacts
+- `make deploy` - Auto-commit and push changes
 - `docker build -t stooge .` - Build Docker image (when Dockerfile exists)
