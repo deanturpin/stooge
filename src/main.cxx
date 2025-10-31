@@ -14,6 +14,12 @@
 
 constexpr double SPEEDUP_FACTOR = 10.0;
 
+// Compile-time tests
+static_assert(SPEEDUP_FACTOR > 0.0, "Speedup factor must be positive");
+static_assert(SPEEDUP_FACTOR <= 1000.0,
+              "Speedup factor seems unreasonably high");
+static_assert(sizeof(uint16_t) == 2, "Port numbers must be 16-bit");
+
 struct PacketInfo {
   std::string src_ip;
   std::string dst_ip;
