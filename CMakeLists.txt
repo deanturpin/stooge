@@ -4,4 +4,9 @@ project(stooge)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_executable(stooge src/main.cpp)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(PCAP REQUIRED libpcap)
+
+add_executable(stooge src/main.cxx)
+target_link_libraries(stooge ${PCAP_LIBRARIES})
+target_include_directories(stooge PRIVATE ${PCAP_INCLUDE_DIRS})

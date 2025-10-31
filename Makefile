@@ -8,7 +8,7 @@ build:
 	docker build -t $(IMAGE) .
 
 run:
-	docker run --rm $(IMAGE)
+	docker run --rm -v $(PWD):/data $(IMAGE) /data/laptop.pcapng
 
 test:
 	@echo "Tests not yet implemented"

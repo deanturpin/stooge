@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     g++-14 \
+    libpcap-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Set g++-14 as default
@@ -24,4 +26,4 @@ COPY . .
 RUN cmake -B build && cmake --build build
 
 # Run
-CMD ["./build/stooge"]
+ENTRYPOINT ["./build/stooge"]
