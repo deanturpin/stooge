@@ -1,5 +1,6 @@
 #include "dns.hxx"
 #include <arpa/inet.h>
+#include <array>
 #include <chrono>
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
@@ -29,25 +30,23 @@ struct PacketInfo {
   size_t length = 0;
 
   std::string describe() const {
-    std::string src_host = dns::reverse_lookup(src_ip);
-    std::string dst_host = dns::reverse_lookup(dst_ip);
+    auto src_host = dns::reverse_lookup(src_ip);
+    auto dst_host = dns::reverse_lookup(dst_ip);
 
     auto format_endpoint = [](const std::string &ip, uint16_t port,
                               const std::string &host) {
       if (!host.empty() && host != ip) {
-        if (port > 0) {
+        if (port > 0)
           return std::format("{}:{} ({})", ip, port, host);
-        }
         return std::format("{} ({})", ip, host);
       }
-      if (port > 0) {
+      if (port > 0)
         return std::format("{}:{}", ip, port);
-      }
       return ip;
     };
 
-    std::string src = format_endpoint(src_ip, src_port, src_host);
-    std::string dst = format_endpoint(dst_ip, dst_port, dst_host);
+    auto src = format_endpoint(src_ip, src_port, src_host);
+    auto dst = format_endpoint(dst_ip, dst_port, dst_host);
 
     return std::format("{} {} → {} ({} bytes)", protocol, src, dst, length);
   }
@@ -58,29 +57,29 @@ std::optional<PacketInfo> parse_packet(const u_char *packet,
   if (header->caplen < sizeof(struct ether_header))
     return std::nullopt;
 
-  struct ether_header *eth = (struct ether_header *)packet;
+  auto eth = reinterpret_cast<const struct ether_header *>(packet);
 
   if (ntohs(eth->ether_type) != ETHERTYPE_IP)
     return std::nullopt;
 
-  struct ip *iph = (struct ip *)(packet + sizeof(struct ether_header));
+  auto iph = reinterpret_cast<const struct ip *>(
+      packet + sizeof(struct ether_header));
 
   if (header->caplen < sizeof(struct ether_header) + sizeof(struct ip))
     return std::nullopt;
 
-  PacketInfo info;
-  char src_ip[INET_ADDRSTRLEN];
-  char dst_ip[INET_ADDRSTRLEN];
-  inet_ntop(AF_INET, &(iph->ip_src), src_ip, INET_ADDRSTRLEN);
-  inet_ntop(AF_INET, &(iph->ip_dst), dst_ip, INET_ADDRSTRLEN);
-  info.src_ip = src_ip;
-  info.dst_ip = dst_ip;
+  auto info = PacketInfo{};
+  auto src_ip = std::array<char, INET_ADDRSTRLEN>{};
+  auto dst_ip = std::array<char, INET_ADDRSTRLEN>{};
+  inet_ntop(AF_INET, &(iph->ip_src), src_ip.data(), INET_ADDRSTRLEN);
+  inet_ntop(AF_INET, &(iph->ip_dst), dst_ip.data(), INET_ADDRSTRLEN);
+  info.src_ip = src_ip.data();
+  info.dst_ip = dst_ip.data();
   info.length = header->len;
 
   if (iph->ip_p == IPPROTO_TCP) {
-    struct tcphdr *tcph =
-        (struct tcphdr *)(packet + sizeof(struct ether_header) +
-                          sizeof(struct ip));
+    auto tcph = reinterpret_cast<const struct tcphdr *>(
+        packet + sizeof(struct ether_header) + sizeof(struct ip));
     if (header->caplen >= sizeof(struct ether_header) + sizeof(struct ip) +
                               sizeof(struct tcphdr)) {
       info.protocol = "TCP";
@@ -88,9 +87,8 @@ std::optional<PacketInfo> parse_packet(const u_char *packet,
       info.dst_port = ntohs(tcph->th_dport);
     }
   } else if (iph->ip_p == IPPROTO_UDP) {
-    struct udphdr *udph =
-        (struct udphdr *)(packet + sizeof(struct ether_header) +
-                          sizeof(struct ip));
+    auto udph = reinterpret_cast<const struct udphdr *>(
+        packet + sizeof(struct ether_header) + sizeof(struct ip));
     if (header->caplen >= sizeof(struct ether_header) + sizeof(struct ip) +
                               sizeof(struct udphdr)) {
       info.protocol = "UDP";
@@ -135,27 +133,27 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  const char *filename = argv[1];
-  char errbuf[PCAP_ERRBUF_SIZE];
+  auto filename = argv[1];
+  auto errbuf = std::array<char, PCAP_ERRBUF_SIZE>{};
 
-  pcap_t *handle = pcap_open_offline(filename, errbuf);
+  auto handle = pcap_open_offline(filename, errbuf.data());
   if (!handle) {
-    std::print("Error opening file {}: {}\n", filename, errbuf);
+    std::print("Error opening file {}: {}\n", filename, errbuf.data());
     return 1;
   }
 
   std::print("Successfully opened PCAP file: {}\n", filename);
   std::print("Replay speed: {}x\n\n", SPEEDUP_FACTOR);
 
-  int datalink = pcap_datalink(handle);
+  auto datalink = pcap_datalink(handle);
   std::print("Data link type: {} ({})\n\n", pcap_datalink_val_to_name(datalink),
              pcap_datalink_val_to_description(datalink));
 
-  struct pcap_pkthdr *header;
-  const u_char *packet;
-  int packet_count = 0;
-  std::optional<std::chrono::steady_clock::time_point> start_time;
-  std::optional<struct timeval> first_packet_time;
+  auto header = static_cast<struct pcap_pkthdr *>(nullptr);
+  auto packet = static_cast<const u_char *>(nullptr);
+  auto packet_count = 0;
+  auto start_time = std::optional<std::chrono::steady_clock::time_point>{};
+  auto first_packet_time = std::optional<struct timeval>{};
 
   std::print("Beginning replay...\n\n");
 
@@ -167,7 +165,7 @@ int main(int argc, char *argv[]) {
       start_time = std::chrono::steady_clock::now();
     }
 
-    double packet_offset =
+    auto packet_offset =
         (header->ts.tv_sec - first_packet_time->tv_sec) +
         (header->ts.tv_usec - first_packet_time->tv_usec) / 1000000.0;
 
@@ -181,10 +179,9 @@ int main(int argc, char *argv[]) {
     std::this_thread::sleep_until(target_time);
 
     auto info = parse_packet(packet, header);
-    if (info) {
+    if (info)
       std::print("[{:6d}] {:8.3f}s: {}\n", packet_count, packet_offset,
                  info->describe());
-    }
   }
 
   std::print("\n\nReplay complete!\n");
