@@ -8,7 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Technology Stack
 
-- **Language**: C++
+- **Language**: Modern C++ (latest standard)
+- **Build System**: CMake
+- **Container**: Ubuntu (latest) Docker container
 - **Key Libraries**: `libpcap` for PCAP parsing
 - **Deployment**: Docker with multi-stage builds
 
@@ -19,6 +21,8 @@ When implemented, the codebase will follow this structure:
 - `main.cpp` - CLI entry point
 - `parser/` - PCAP file parsing using libpcap
 - `replayer/` - Timing engine and network injection with proper TCP state handling
+- `CMakeLists.txt` - CMake build configuration
+- `Dockerfile` - Ubuntu-based container with build environment
 
 ## Core Functionality
 
@@ -30,9 +34,15 @@ The tool needs to:
 
 ## Development Commands
 
-Standard C++ workflow:
-- `make` - Build the binary
-- `make test` - Run all tests
-- `make clean` - Clean build artefacts
+All development happens inside Docker containers:
+
+Building and running:
+- `docker build -t stooge .` - Build the Docker image
+- `docker run stooge` - Run the application
+- `docker run stooge <pcap-file>` - Run with PCAP file
+
+CMake workflow (inside container):
+- `cmake -B build` - Configure build
+- `cmake --build build` - Build the binary
+- `ctest --test-dir build` - Run tests
 - `make deploy` - Auto-commit and push changes
-- `docker build -t stooge .` - Build Docker image (when Dockerfile exists)

@@ -20,7 +20,9 @@ captured logs.
 
 ## Technology
 
-- **Language**: C++ - for performance and low-level network control
+- **Language**: Modern C++ - for performance and low-level network control
+- **Build System**: CMake
+- **Container**: Ubuntu (latest) - all development and execution in Docker
 - **Key Libraries**: `libpcap` for PCAP parsing
 - **Deployment**: Docker with multi-stage builds for minimal image size
 
@@ -56,8 +58,17 @@ stooge/
 │   └── pcap.cpp        # PCAP file parsing
 ├── replayer/
 │   └── replay.cpp      # Timing and network injection
-├── Makefile
-└── Dockerfile
+├── CMakeLists.txt      # CMake build configuration
+└── Dockerfile          # Ubuntu-based build container
+```
+
+### Building and Running
+
+All development happens inside Docker containers:
+
+```bash
+docker build -t stooge .
+docker run stooge <pcap-file>
 ```
 
 ## Use Cases
