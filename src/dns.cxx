@@ -6,15 +6,8 @@
 
 namespace dns {
 
-namespace {
-std::map<std::string, std::string> &get_cache_impl() {
-  static std::map<std::string, std::string> cache;
-  return cache;
-}
-} // anonymous namespace
-
 std::string reverse_lookup(const std::string &ip) {
-  auto &cache = get_cache_impl();
+  static std::map<std::string, std::string> cache;
 
   if (auto it = cache.find(ip); it != cache.end()) {
     return it->second;
@@ -36,7 +29,5 @@ std::string reverse_lookup(const std::string &ip) {
   cache[ip] = hostname;
   return hostname;
 }
-
-std::map<std::string, std::string> get_cache() { return get_cache_impl(); }
 
 } // namespace dns

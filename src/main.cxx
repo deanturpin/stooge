@@ -190,16 +190,6 @@ int main(int argc, char *argv[]) {
   std::print("\n\nReplay complete!\n");
   std::print("Total packets: {}\n", packet_count);
 
-  auto dns_cache = dns::get_cache();
-  std::print("DNS cache entries: {}\n\n", dns_cache.size());
-
-  std::print("Resolved hostnames:\n");
-  for (const auto &[ip, hostname] : dns_cache) {
-    if (!hostname.empty() && hostname != ip) {
-      std::print("  {} → {}\n", ip, hostname);
-    }
-  }
-
   pcap_close(handle);
   return 0;
 }
