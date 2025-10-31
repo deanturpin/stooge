@@ -1,10 +1,13 @@
-.PHONY: all build run test clean deploy
+.PHONY: all build run test clean deploy format
 
 IMAGE := deanturpin/stooge
 
 all: build run
 
-build:
+format:
+	docker run --rm -v $(PWD):/app -w /app ubuntu:latest bash -c "apt-get update && apt-get install -y clang-format && clang-format -i src/*.cxx src/*.hxx"
+
+build: format
 	docker build -t $(IMAGE) .
 
 run:
