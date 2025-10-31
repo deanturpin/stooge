@@ -14,9 +14,8 @@ std::string reverse_lookup(const std::string &ip) {
   static std::map<std::string, std::string> cache;
 
   // Return cached result if available
-  if (cache.contains(ip)) {
+  if (cache.contains(ip))
     return cache[ip];
-  }
 
   // Prepare sockaddr structure for getnameinfo()
   struct sockaddr_in sa;
@@ -29,9 +28,8 @@ std::string reverse_lookup(const std::string &ip) {
   // Attempt reverse DNS lookup
   std::string hostname;
   if (getnameinfo((struct sockaddr *)&sa, sizeof(sa), host, sizeof(host),
-                  nullptr, 0, 0) == 0) {
+                  nullptr, 0, 0) == 0)
     hostname = host;
-  }
 
   // Cache the result (empty string on failure) and return
   cache[ip] = hostname;
