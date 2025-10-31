@@ -5,15 +5,38 @@
 #include <netinet/udp.h>
 #include <netinet/if_ether.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <set>
 #include <string>
+#include <cstring>
+
+std::string reverse_dns_lookup(const std::string& ip) {
+    struct sockaddr_in sa;
+    char host[NI_MAXHOST];
+
+    std::memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET;
+    inet_pton(AF_INET, ip.c_str(), &sa.sin_addr);
+
+    if (getnameinfo((struct sockaddr*)&sa, sizeof(sa), host, sizeof(host), nullptr, 0, 0) == 0) {
+        return host;
+    }
+    return "";
+}
 
 struct Endpoint {
     std::string ip;
     uint16_t port;
     std::string protocol;
+    mutable std::string hostname;
 
     std::string to_string() const {
+        if (hostname.empty()) {
+            hostname = reverse_dns_lookup(ip);
+        }
+        if (!hostname.empty() && hostname != ip) {
+            return std::format("{}:{} ({}) [{}]", ip, port, protocol, hostname);
+        }
         return std::format("{}:{} ({})", ip, port, protocol);
     }
 
