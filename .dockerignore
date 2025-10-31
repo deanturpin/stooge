@@ -1,0 +1,26 @@
+# PCAP capture files
+*.pcap
+*.pcapng
+*.cap
+
+# Git files
+.git
+.gitignore
+
+# Build artefacts
+build/
+*.o
+*.a
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+README.md
+CLAUDE.md
+
+# CI/CD
+.github/
