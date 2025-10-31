@@ -1,6 +1,7 @@
+# Multi-stage Docker build for stooge network traffic replayer
 FROM ubuntu:latest
 
-# Install build tools and g++-14
+# Install build tools and g++-14 (required for C++23 support)
 RUN apt-get update && apt-get install -y \
     software-properties-common \
     && add-apt-repository ppa:ubuntu-toolchain-r/test -y \
@@ -13,17 +14,17 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Set g++-14 as default
+# Set g++-14 as default compiler
 RUN update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100 \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100
 
 WORKDIR /app
 
-# Copy source files
+# Copy all source files into container
 COPY . .
 
-# Build
+# Build using CMake
 RUN cmake -B build && cmake --build build
 
-# Run
+# Entry point - run stooge binary with PCAP file argument
 ENTRYPOINT ["./build/stooge"]
