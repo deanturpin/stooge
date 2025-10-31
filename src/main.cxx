@@ -1,6 +1,28 @@
 #include <print>
 #include <pcap/pcap.h>
-#include <cstring>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+#include <netinet/if_ether.h>
+#include <arpa/inet.h>
+#include <set>
+#include <string>
+
+struct Endpoint {
+    std::string ip;
+    uint16_t port;
+    std::string protocol;
+
+    std::string to_string() const {
+        return std::format("{}:{} ({})", ip, port, protocol);
+    }
+
+    bool operator<(const Endpoint& other) const {
+        if (ip != other.ip) return ip < other.ip;
+        if (port != other.port) return port < other.port;
+        return protocol < other.protocol;
+    }
+};
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
@@ -17,7 +39,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::print("Successfully opened PCAP file: {}\n", filename);
+    std::print("Successfully opened PCAP file: {}\n\n", filename);
 
     int datalink = pcap_datalink(handle);
     std::print("Data link type: {} ({})\n",
@@ -27,12 +49,51 @@ int main(int argc, char* argv[]) {
     struct pcap_pkthdr* header;
     const u_char* packet;
     int packet_count = 0;
+    std::set<Endpoint> endpoints;
 
     while (pcap_next_ex(handle, &header, &packet) == 1) {
         packet_count++;
+
+        if (header->caplen < sizeof(struct ether_header)) continue;
+
+        struct ether_header* eth = (struct ether_header*)packet;
+
+        if (ntohs(eth->ether_type) == ETHERTYPE_IP) {
+            struct ip* iph = (struct ip*)(packet + sizeof(struct ether_header));
+
+            if (header->caplen < sizeof(struct ether_header) + sizeof(struct ip))
+                continue;
+
+            char src_ip[INET_ADDRSTRLEN];
+            char dst_ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &(iph->ip_src), src_ip, INET_ADDRSTRLEN);
+            inet_ntop(AF_INET, &(iph->ip_dst), dst_ip, INET_ADDRSTRLEN);
+
+            if (iph->ip_p == IPPROTO_TCP) {
+                struct tcphdr* tcph = (struct tcphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
+
+                if (header->caplen >= sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct tcphdr)) {
+                    endpoints.insert({src_ip, ntohs(tcph->th_sport), "TCP"});
+                    endpoints.insert({dst_ip, ntohs(tcph->th_dport), "TCP"});
+                }
+            } else if (iph->ip_p == IPPROTO_UDP) {
+                struct udphdr* udph = (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
+
+                if (header->caplen >= sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr)) {
+                    endpoints.insert({src_ip, ntohs(udph->uh_sport), "UDP"});
+                    endpoints.insert({dst_ip, ntohs(udph->uh_dport), "UDP"});
+                }
+            }
+        }
     }
 
-    std::print("Total packets: {}\n", packet_count);
+    std::print("\nTotal packets: {}\n", packet_count);
+    std::print("Unique endpoints: {}\n\n", endpoints.size());
+
+    std::print("Endpoints:\n");
+    for (const auto& endpoint : endpoints) {
+        std::print("  {}\n", endpoint.to_string());
+    }
 
     pcap_close(handle);
     return 0;
