@@ -26,7 +26,7 @@ std::string reverse_lookup(const std::string &ip) {
   inet_pton(AF_INET, ip.c_str(), &sa.sin_addr);
 
   // Attempt reverse DNS lookup
-  std::string hostname;
+  auto hostname = std::string{};
   if (getnameinfo((struct sockaddr *)&sa, sizeof(sa), host, sizeof(host),
                   nullptr, 0, 0) == 0)
     hostname = host;
