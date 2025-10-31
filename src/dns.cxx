@@ -14,8 +14,8 @@ std::string reverse_lookup(const std::string &ip) {
   static std::map<std::string, std::string> cache;
 
   // Return cached result if available
-  if (auto it = cache.find(ip); it != cache.end()) {
-    return it->second;
+  if (cache.contains(ip)) {
+    return cache[ip];
   }
 
   // Prepare sockaddr structure for getnameinfo()
