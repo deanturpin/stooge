@@ -20,8 +20,8 @@ captured logs.
 
 ## Technology
 
-- **Language**: Go - for excellent networking libraries and easy deployment
-- **Key Libraries**: `gopacket` for PCAP parsing
+- **Language**: C++ - for performance and low-level network control
+- **Key Libraries**: `libpcap` for PCAP parsing
 - **Deployment**: Docker with multi-stage builds for minimal image size
 
 ## Project Status
@@ -51,13 +51,13 @@ Project structure:
 
 ```text
 stooge/
-├── main.go              # CLI entry point
+├── main.cpp            # CLI entry point
 ├── parser/
-│   └── pcap.go         # PCAP file parsing
+│   └── pcap.cpp        # PCAP file parsing
 ├── replayer/
-│   └── replay.go       # Timing and network injection
-├── Dockerfile
-└── go.mod
+│   └── replay.cpp      # Timing and network injection
+├── Makefile
+└── Dockerfile
 ```
 
 ## Use Cases
