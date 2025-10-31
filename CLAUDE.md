@@ -21,7 +21,8 @@ When implemented, the codebase will follow this structure:
 - `main.cpp` - CLI entry point
 - `parser/` - PCAP file parsing using libpcap
 - `replayer/` - Timing engine and network injection with proper TCP state handling
-- `CMakeLists.txt` - CMake build configuration
+- `Makefile` - Top-level build orchestration (wraps Docker/CMake)
+- `CMakeLists.txt` - CMake build configuration (runs inside container)
 - `Dockerfile` - Ubuntu-based container with build environment
 
 ## Core Functionality
@@ -34,15 +35,13 @@ The tool needs to:
 
 ## Development Commands
 
-All development happens inside Docker containers:
+All development happens inside Docker containers, orchestrated via Makefile:
 
-Building and running:
-- `docker build -t stooge .` - Build the Docker image
-- `docker run stooge` - Run the application
-- `docker run stooge <pcap-file>` - Run with PCAP file
-
-CMake workflow (inside container):
-- `cmake -B build` - Configure build
-- `cmake --build build` - Build the binary
-- `ctest --test-dir build` - Run tests
+Primary workflow:
+- `make` - Build everything (runs Docker build with CMake inside)
+- `make test` - Run all tests
+- `make clean` - Clean build artefacts
 - `make deploy` - Auto-commit and push changes
+- `make run` - Run the application
+
+The Makefile wraps Docker commands which execute CMake builds inside Ubuntu containers.

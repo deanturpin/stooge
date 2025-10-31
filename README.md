@@ -58,17 +58,20 @@ stooge/
 │   └── pcap.cpp        # PCAP file parsing
 ├── replayer/
 │   └── replay.cpp      # Timing and network injection
+├── Makefile            # Top-level build orchestration
 ├── CMakeLists.txt      # CMake build configuration
 └── Dockerfile          # Ubuntu-based build container
 ```
 
 ### Building and Running
 
-All development happens inside Docker containers:
+All development happens inside Docker containers, orchestrated via Makefile:
 
 ```bash
-docker build -t stooge .
-docker run stooge <pcap-file>
+make              # Build everything
+make test         # Run tests
+make run          # Run the application
+make deploy       # Commit and push changes
 ```
 
 ## Use Cases
