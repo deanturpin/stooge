@@ -1,4 +1,4 @@
-.PHONY: all build run test clean deploy push
+.PHONY: all build run test clean deploy
 
 IMAGE := deanturpin/stooge
 
@@ -15,9 +15,6 @@ test:
 
 clean:
 	docker rmi $(IMAGE) 2>/dev/null || true
-
-push:
-	docker push $(IMAGE)
 
 deploy:
 	git add -A && git commit -m "Auto-commit from make deploy 🤖" && git push
