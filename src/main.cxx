@@ -1,6 +1,9 @@
 #include <print>
 #include <set>
 #include <string>
+#include <chrono>
+#include <thread>
+#include <optional>
 #include <pcap/pcap.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -8,6 +11,68 @@
 #include <netinet/if_ether.h>
 #include <arpa/inet.h>
 #include "dns.hxx"
+
+constexpr double SPEEDUP_FACTOR = 10.0;
+
+struct PacketInfo {
+    std::string src_ip;
+    std::string dst_ip;
+    uint16_t src_port = 0;
+    uint16_t dst_port = 0;
+    std::string protocol;
+    size_t length = 0;
+
+    std::string describe() const {
+        if (src_port > 0 && dst_port > 0) {
+            return std::format("{} {}:{} → {}:{} ({} bytes)",
+                             protocol, src_ip, src_port, dst_ip, dst_port, length);
+        }
+        return std::format("{} {} → {} ({} bytes)",
+                         protocol, src_ip, dst_ip, length);
+    }
+};
+
+std::optional<PacketInfo> parse_packet(const u_char* packet, const struct pcap_pkthdr* header) {
+    if (header->caplen < sizeof(struct ether_header)) return std::nullopt;
+
+    struct ether_header* eth = (struct ether_header*)packet;
+
+    if (ntohs(eth->ether_type) != ETHERTYPE_IP) return std::nullopt;
+
+    struct ip* iph = (struct ip*)(packet + sizeof(struct ether_header));
+
+    if (header->caplen < sizeof(struct ether_header) + sizeof(struct ip))
+        return std::nullopt;
+
+    PacketInfo info;
+    char src_ip[INET_ADDRSTRLEN];
+    char dst_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(iph->ip_src), src_ip, INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &(iph->ip_dst), dst_ip, INET_ADDRSTRLEN);
+    info.src_ip = src_ip;
+    info.dst_ip = dst_ip;
+    info.length = header->len;
+
+    if (iph->ip_p == IPPROTO_TCP) {
+        struct tcphdr* tcph = (struct tcphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
+        if (header->caplen >= sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct tcphdr)) {
+            info.protocol = "TCP";
+            info.src_port = ntohs(tcph->th_sport);
+            info.dst_port = ntohs(tcph->th_dport);
+        }
+    } else if (iph->ip_p == IPPROTO_UDP) {
+        struct udphdr* udph = (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
+        if (header->caplen >= sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr)) {
+            info.protocol = "UDP";
+            info.src_port = ntohs(udph->uh_sport);
+            info.dst_port = ntohs(udph->uh_dport);
+        }
+    } else {
+        info.protocol = "IP";
+    }
+
+    return info;
+}
 
 struct Endpoint {
     std::string ip;
@@ -47,61 +112,47 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::print("Successfully opened PCAP file: {}\n\n", filename);
+    std::print("Successfully opened PCAP file: {}\n", filename);
+    std::print("Replay speed: {}x\n\n", SPEEDUP_FACTOR);
 
     int datalink = pcap_datalink(handle);
-    std::print("Data link type: {} ({})\n",
+    std::print("Data link type: {} ({})\n\n",
                pcap_datalink_val_to_name(datalink),
                pcap_datalink_val_to_description(datalink));
 
     struct pcap_pkthdr* header;
     const u_char* packet;
     int packet_count = 0;
-    std::set<Endpoint> endpoints;
+    std::optional<std::chrono::steady_clock::time_point> start_time;
+    std::optional<struct timeval> first_packet_time;
+
+    std::print("Beginning replay...\n\n");
 
     while (pcap_next_ex(handle, &header, &packet) == 1) {
         packet_count++;
 
-        if (header->caplen < sizeof(struct ether_header)) continue;
+        if (!first_packet_time) {
+            first_packet_time = header->ts;
+            start_time = std::chrono::steady_clock::now();
+        }
 
-        struct ether_header* eth = (struct ether_header*)packet;
+        double packet_offset = (header->ts.tv_sec - first_packet_time->tv_sec) +
+                              (header->ts.tv_usec - first_packet_time->tv_usec) / 1000000.0;
 
-        if (ntohs(eth->ether_type) == ETHERTYPE_IP) {
-            struct ip* iph = (struct ip*)(packet + sizeof(struct ether_header));
+        auto scaled_offset = std::chrono::duration<double>(packet_offset / SPEEDUP_FACTOR);
+        auto target_time = *start_time + std::chrono::duration_cast<std::chrono::steady_clock::duration>(scaled_offset);
 
-            if (header->caplen < sizeof(struct ether_header) + sizeof(struct ip))
-                continue;
+        std::this_thread::sleep_until(target_time);
 
-            char src_ip[INET_ADDRSTRLEN];
-            char dst_ip[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &(iph->ip_src), src_ip, INET_ADDRSTRLEN);
-            inet_ntop(AF_INET, &(iph->ip_dst), dst_ip, INET_ADDRSTRLEN);
-
-            if (iph->ip_p == IPPROTO_TCP) {
-                struct tcphdr* tcph = (struct tcphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
-
-                if (header->caplen >= sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct tcphdr)) {
-                    endpoints.insert({src_ip, ntohs(tcph->th_sport), "TCP"});
-                    endpoints.insert({dst_ip, ntohs(tcph->th_dport), "TCP"});
-                }
-            } else if (iph->ip_p == IPPROTO_UDP) {
-                struct udphdr* udph = (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
-
-                if (header->caplen >= sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr)) {
-                    endpoints.insert({src_ip, ntohs(udph->uh_sport), "UDP"});
-                    endpoints.insert({dst_ip, ntohs(udph->uh_dport), "UDP"});
-                }
-            }
+        auto info = parse_packet(packet, header);
+        if (info) {
+            std::print("[{:6d}] {:8.3f}s: {}\n",
+                      packet_count, packet_offset, info->describe());
         }
     }
 
-    std::print("\nTotal packets: {}\n", packet_count);
-    std::print("Unique endpoints: {}\n\n", endpoints.size());
-
-    std::print("Endpoints:\n");
-    for (const auto& endpoint : endpoints) {
-        std::print("  {}\n", endpoint.to_string());
-    }
+    std::print("\n\nReplay complete!\n");
+    std::print("Total packets: {}\n", packet_count);
 
     pcap_close(handle);
     return 0;
