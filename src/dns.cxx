@@ -16,17 +16,17 @@ namespace dns {
 
 namespace {
 // Shared cache with mutex for thread-safe access
-std::map<std::string, std::string> cache;
-std::mutex cache_mutex;
+auto cache = std::map<std::string, std::string>{};
+auto cache_mutex = std::mutex{};
 
 // Thread pool for DNS resolution
 constexpr auto MAX_WORKERS = 10;
-std::vector<std::thread> workers;
-std::queue<std::string> work_queue;
-std::mutex queue_mutex;
-std::condition_variable queue_cv;
+auto workers = std::vector<std::thread>{};
+auto work_queue = std::queue<std::string>{};
+auto queue_mutex = std::mutex{};
+auto queue_cv = std::condition_variable{};
 auto shutdown = false;
-std::once_flag init_flag;
+auto init_flag = std::once_flag{};
 
 // Perform blocking DNS lookup (internal helper)
 std::string resolve_blocking(const std::string &ip) {
