@@ -73,8 +73,8 @@ std::optional<PacketInfo> parse_packet(const u_char *packet,
   if (ntohs(eth->ether_type) != ETHERTYPE_IP)
     return std::nullopt;
 
-  auto iph = reinterpret_cast<const struct ip *>(
-      packet + sizeof(struct ether_header));
+  auto iph =
+      reinterpret_cast<const struct ip *>(packet + sizeof(struct ether_header));
 
   // Verify we have complete IP header
   if (header->caplen < sizeof(struct ether_header) + sizeof(struct ip))
@@ -211,6 +211,11 @@ int main(int argc, char *argv[]) {
 
   std::print("\n\nReplay complete!\n");
   std::print("Total packets: {}\n", packet_count);
+
+  // Wait for any remaining DNS lookups to complete
+  std::print("\nWaiting for DNS resolution to complete...\n");
+  dns::wait_for_resolution();
+  std::print("DNS resolution complete.\n");
 
   pcap_close(handle);
   return 0;
