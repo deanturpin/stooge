@@ -18,12 +18,12 @@ build:
 
 # Run container with sample PCAP file
 run:
-	docker run --rm -v $(PWD):/data $(IMAGE) /data/laptop.pcapng
+	docker run --rm -t -v $(PWD):/data $(IMAGE) /data/laptop.pcapng
 
 # Run live capture (requires elevated privileges)
 live:
 	@echo "Starting live capture (requires sudo/elevated privileges)..."
-	docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW --net=host $(IMAGE)
+	docker run --rm -t --cap-add=NET_ADMIN --cap-add=NET_RAW --net=host $(IMAGE)
 
 # Run tests (not yet implemented)
 test:
