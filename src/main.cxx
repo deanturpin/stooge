@@ -17,9 +17,9 @@
 #include <string>
 #include <thread>
 
-// Replay speed multiplier - 10x means packets play back 10 times faster than
+// Replay speed multiplier - 4x means packets play back 4 times faster than
 // captured
-constexpr double SPEEDUP_FACTOR = 10.0;
+constexpr double SPEEDUP_FACTOR = 4.0;
 
 // Global flag for signal handling
 static volatile sig_atomic_t stop_capture = 0;
