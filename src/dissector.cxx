@@ -121,6 +121,24 @@ runtime::runtime() {
   // Open standard libraries
   luaL_openlibs(L);
 
+  // Register bit32 stubs (Lua 5.4 removed bit32, provide minimal implementation)
+  lua_newtable(L);
+  lua_pushcfunction(L, [](lua_State *L) -> int {
+    auto val = luaL_checkinteger(L, 1);
+    auto shift = luaL_checkinteger(L, 2);
+    lua_pushinteger(L, val >> shift);
+    return 1;
+  });
+  lua_setfield(L, -2, "rshift");
+  lua_pushcfunction(L, [](lua_State *L) -> int {
+    auto val1 = luaL_checkinteger(L, 1);
+    auto val2 = luaL_checkinteger(L, 2);
+    lua_pushinteger(L, val1 & val2);
+    return 1;
+  });
+  lua_setfield(L, -2, "band");
+  lua_setglobal(L, "bit32");
+
   // Register Wireshark API stubs
   register_wireshark_api(L);
 }
@@ -152,23 +170,68 @@ static int buffer_len(lua_State *L) {
   return 1;
 }
 
+// Buffer slice uint() method
+static int buffer_uint(lua_State *L) {
+  auto buf = static_cast<buffer_wrapper *>(lua_touserdata(L, 1));
+  if (buf->length == 1) {
+    lua_pushinteger(L, buf->data[0]);
+  } else if (buf->length == 2) {
+    uint16_t val = (buf->data[0] << 8) | buf->data[1];  // Big-endian
+    lua_pushinteger(L, val);
+  } else if (buf->length == 4) {
+    uint32_t val = (buf->data[0] << 24) | (buf->data[1] << 16) |
+                   (buf->data[2] << 8) | buf->data[3];
+    lua_pushinteger(L, val);
+  } else {
+    return luaL_error(L, "uint() only supports 1, 2, or 4 byte buffers");
+  }
+  return 1;
+}
+
+// Buffer slice string() method
+static int buffer_string(lua_State *L) {
+  auto buf = static_cast<buffer_wrapper *>(lua_touserdata(L, 1));
+  lua_pushlstring(L, reinterpret_cast<const char *>(buf->data), buf->length);
+  return 1;
+}
+
 static int buffer_call(lua_State *L) {
   auto buf = static_cast<buffer_wrapper *>(lua_touserdata(L, 1));
-  // buffer() returns entire buffer, buffer(offset, length) returns substring
-  // For simplicity, just return a new buffer userdata
+
+  // Get offset and length parameters
+  auto offset = 0;
+  auto length = buf->length;
+  if (lua_gettop(L) >= 2) {
+    offset = luaL_checkinteger(L, 2);
+  }
+  if (lua_gettop(L) >= 3) {
+    length = luaL_checkinteger(L, 3);
+  }
+
+  // Bounds check
+  if (offset < 0 || offset >= static_cast<int>(buf->length)) {
+    return luaL_error(L, "buffer offset out of range");
+  }
+  if (offset + length > buf->length) {
+    length = buf->length - offset;
+  }
+
+  // Create new buffer slice
   auto newbuf =
       static_cast<buffer_wrapper *>(lua_newuserdata(L, sizeof(buffer_wrapper)));
-  newbuf->data = buf->data;
-  newbuf->length = buf->length;
+  newbuf->data = buf->data + offset;
+  newbuf->length = length;
 
-  // Add metatable with __tostring method
-  lua_newtable(L);
-  lua_pushcfunction(L, [](lua_State *L) -> int {
-    auto b = static_cast<buffer_wrapper *>(lua_touserdata(L, 1));
-    lua_pushlstring(L, reinterpret_cast<const char *>(b->data), b->length);
-    return 1;
-  });
+  // Set metatable with methods
+  lua_newtable(L); // metatable
+  lua_newtable(L); // methods table
+  lua_pushcfunction(L, buffer_len);
+  lua_setfield(L, -2, "len");
+  lua_pushcfunction(L, buffer_uint);
+  lua_setfield(L, -2, "uint");
+  lua_pushcfunction(L, buffer_string);
   lua_setfield(L, -2, "string");
+  lua_setfield(L, -2, "__index");
   lua_setmetatable(L, -2);
 
   return 1;
@@ -177,7 +240,10 @@ static int buffer_call(lua_State *L) {
 std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
                                        uint16_t src_port, uint16_t dst_port,
                                        const std::string &protocol) {
-  if (!L || length == 0)
+  if (!L)
+    return std::nullopt;
+
+  if (length == 0)
     return std::nullopt;
 
   // Try HTTP dissector for port 80, 8080, 443
@@ -211,41 +277,84 @@ std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
   buf->length = length;
 
   // Set buffer metatable
-  lua_newtable(L);
+  lua_newtable(L); // metatable
+
+  // Create methods table for __index
+  lua_newtable(L); // methods table
   lua_pushcfunction(L, buffer_len);
   lua_setfield(L, -2, "len");
+  lua_setfield(L, -2, "__index"); // metatable.__index = methods
+
   lua_pushcfunction(L, buffer_call);
   lua_setfield(L, -2, "__call");
+
   lua_setmetatable(L, -2);
 
-  // Create pinfo table
-  lua_newtable(L);
-  lua_newtable(L); // pinfo.cols
-  lua_setfield(L, -2, "cols");
+  // Create pinfo table with cols.info tracking
+  lua_newtable(L); // pinfo table
+  lua_newtable(L); // pinfo.cols table
 
-  // Create tree table (dummy)
-  lua_newtable(L);
+  // Create cols metatable to track info field assignments
+  lua_newtable(L); // cols metatable
   lua_pushcfunction(L, [](lua_State *L) -> int {
-    // tree:add() just returns another tree
-    lua_newtable(L);
+    // __newindex: called when cols.info = value
+    // Stack: table, key, value
+    if (lua_type(L, 2) == LUA_TSTRING) {
+      auto key = std::string{lua_tostring(L, 2)};
+      if (key == "info" && lua_type(L, 3) == LUA_TSTRING) {
+        // Store the info value in the registry for later retrieval
+        lua_pushvalue(L, 3); // Push value
+        lua_setfield(L, LUA_REGISTRYINDEX, "dissector_info");
+      }
+    }
+    // Store in table normally
+    lua_rawset(L, 1);
+    return 0;
+  });
+  lua_setfield(L, -2, "__newindex");
+  lua_setmetatable(L, -2); // Set metatable on cols
+
+  lua_setfield(L, -2, "cols"); // pinfo.cols = cols table
+
+  // Create tree table (dummy) with method support
+  lua_newtable(L); // tree table
+
+  // Create metatable with __index for methods
+  lua_newtable(L); // metatable
+  lua_newtable(L); // methods table
+  lua_pushcfunction(L, [](lua_State *L) -> int {
+    // tree:add() - returns a new tree with same metatable
+    lua_newtable(L); // new tree
+    lua_getmetatable(L, 1); // Copy metatable from self
+    lua_setmetatable(L, -2);
     return 1;
   });
   lua_setfield(L, -2, "add");
+  lua_setfield(L, -2, "__index"); // metatable.__index = methods table
+  lua_setmetatable(L, -2); // Set metatable on tree
 
   // Call dissector function: dissector(buffer, pinfo, tree)
   if (lua_pcall(L, 3, 0, 0) != LUA_OK) {
-    auto error = std::string{lua_tostring(L, -1)};
-    std::print("Dissector error: {}\n", error);
     lua_pop(L, 2); // Pop error and proto
     return std::nullopt;
   }
 
   lua_pop(L, 1); // Pop proto
 
-  // For now, return simple result
+  // Extract info from registry
   auto res = result{};
   res.protocol = proto_name;
-  res.info = "Dissected";
+  lua_getfield(L, LUA_REGISTRYINDEX, "dissector_info");
+  if (lua_isstring(L, -1))
+    res.info = lua_tostring(L, -1);
+  else
+    res.info = "Dissected";
+  lua_pop(L, 1); // Pop info value
+
+  // Clear registry entry for next dissection
+  lua_pushnil(L);
+  lua_setfield(L, LUA_REGISTRYINDEX, "dissector_info");
+
   return res;
 }
 

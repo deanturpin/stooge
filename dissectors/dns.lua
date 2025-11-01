@@ -1,7 +1,8 @@
 -- DNS dissector for Wireshark/stooge
 -- Parses DNS queries and responses from UDP/TCP packets
 
-local dns_proto = Proto("dns_custom", "DNS Protocol")
+dns_custom = Proto("dns_custom", "DNS Protocol")
+local dns_proto = dns_custom  -- Alias for internal use
 
 -- Protocol fields
 local f_transaction_id = ProtoField.uint16("dns.id", "Transaction ID", base.HEX)

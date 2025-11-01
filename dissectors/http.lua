@@ -1,7 +1,8 @@
 -- HTTP dissector for Wireshark/stooge
 -- Parses HTTP requests and responses from TCP streams
 
-local http_proto = Proto("http_custom", "HTTP Protocol")
+http_custom = Proto("http_custom", "HTTP Protocol")
+local http_proto = http_custom  -- Alias for internal use
 
 -- Protocol fields
 local f_method = ProtoField.string("http.method", "Method")
