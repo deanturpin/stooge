@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     g++-14 \
     libpcap-dev \
+    liblua5.4-dev \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
