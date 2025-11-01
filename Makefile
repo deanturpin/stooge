@@ -12,8 +12,8 @@ all: build run
 format:
 	docker run --rm -v $(PWD):/app -w /app ubuntu:latest bash -c "apt-get update && apt-get install -y clang-format && clang-format -i src/*.cxx src/*.hxx"
 
-# Build Docker image (formats code first)
-build: format
+# Build Docker image
+build:
 	docker build -t $(IMAGE) .
 
 # Run container with sample PCAP file
