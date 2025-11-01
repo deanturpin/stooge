@@ -80,6 +80,8 @@ void init_workers() {
 // Returns hostname if found, empty string if lookup fails or not yet resolved
 // Automatically starts background resolution on first lookup
 std::string reverse_lookup(const std::string &ip) {
+
+  // Initialize worker threads first time only
   std::call_once(init_flag, init_workers);
 
   {
