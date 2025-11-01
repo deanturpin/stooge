@@ -42,4 +42,4 @@ Includes Wireshark-compatible Lua dissectors for:
 
 ## Licence
 
-To be determined
+GPL-3.0-or-later
