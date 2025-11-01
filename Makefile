@@ -1,7 +1,7 @@
 # Makefile for stooge - network traffic replayer
 # All builds run in Docker containers to ensure consistent environment
 
-.PHONY: all build run test clean deploy format
+.PHONY: all build run test clean deploy format install
 
 IMAGE := deanturpin/stooge
 
@@ -27,6 +27,14 @@ test:
 # Remove Docker image
 clean:
 	docker rmi $(IMAGE) 2>/dev/null || true
+
+# Install Lua dissectors to Wireshark user plugins directory
+install:
+	@echo "Installing Lua dissectors to Wireshark plugins directory..."
+	@mkdir -p ~/.local/lib/wireshark/plugins
+	@cp -v dissectors/*.lua ~/.local/lib/wireshark/plugins/
+	@echo "Dissectors installed successfully!"
+	@echo "Restart Wireshark or verify with: Help → About Wireshark → Plugins"
 
 # Commit all changes and push to remote
 deploy:
