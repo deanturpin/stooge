@@ -26,6 +26,7 @@ std::queue<std::string> work_queue;
 std::mutex queue_mutex;
 std::condition_variable queue_cv;
 auto shutdown = false;
+std::once_flag init_flag;
 
 // Perform blocking DNS lookup (internal helper)
 std::string resolve_blocking(const std::string &ip) {
@@ -68,16 +69,10 @@ void worker_thread() {
   }
 }
 
-// Initialize thread pool
+// Initialize thread pool (called once via std::call_once)
 void init_workers() {
-  static auto initialized = false;
-  if (initialized)
-    return;
-
   for (auto i = 0; i < MAX_WORKERS; ++i)
     workers.emplace_back(worker_thread);
-
-  initialized = true;
 }
 } // anonymous namespace
 
@@ -85,7 +80,7 @@ void init_workers() {
 // Returns hostname if found, empty string if lookup fails or not yet resolved
 // Automatically starts background resolution on first lookup
 std::string reverse_lookup(const std::string &ip) {
-  init_workers();
+  std::call_once(init_flag, init_workers);
 
   {
     auto lock = std::scoped_lock{cache_mutex};
