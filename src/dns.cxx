@@ -1,5 +1,6 @@
 #include "dns.hxx"
 #include <arpa/inet.h>
+#include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <map>
@@ -8,6 +9,8 @@
 #include <queue>
 #include <thread>
 #include <vector>
+
+using namespace std::chrono_literals;
 
 namespace dns {
 
@@ -114,7 +117,7 @@ void wait_for_resolution() {
     if (work_queue.empty())
       break;
     lock.unlock();
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(10ms);
   }
 
   // Shutdown workers
