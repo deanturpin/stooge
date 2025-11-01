@@ -1,5 +1,7 @@
 # stooge
 
+**⚠️ Work in Progress - Early Development**
+
 Network traffic replayer with Lua dissector support - replay PCAP files with timing preservation and protocol analysis.
 
 ## Quick Start
