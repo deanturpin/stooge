@@ -1,7 +1,7 @@
 // Network traffic replayer - reads PCAP files and replays timing with DNS
 // resolution
+#include "dissector.hxx"
 #include "dns.hxx"
-#include "lua_dissector.hxx"
 #include <arpa/inet.h>
 #include <array>
 #include <chrono>
@@ -163,11 +163,11 @@ int main(int argc, char *argv[]) {
   std::print("Successfully opened PCAP file: {}\n", filename);
   std::print("Replay speed: {}x\n\n", SPEEDUP_FACTOR);
 
-  // Initialise Lua dissector runtime
-  auto lua_runtime = lua_dissector::Runtime{};
-  lua_runtime.load_dissector("dissectors/http.lua");
-  lua_runtime.load_dissector("dissectors/dns.lua");
-  std::print("Loaded Lua dissectors\n\n");
+  // Initialise dissector runtime
+  auto dissectors = dissector::runtime{};
+  dissectors.load("dissectors/http.lua");
+  dissectors.load("dissectors/dns.lua");
+  std::print("Loaded dissectors\n\n");
 
   // Display data link layer information
   auto datalink = pcap_datalink(handle);

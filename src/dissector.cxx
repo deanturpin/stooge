@@ -1,8 +1,8 @@
-// Lua dissector runtime implementation
-#include "lua_dissector.hxx"
+// Dissector runtime implementation
+#include "dissector.hxx"
 #include <print>
 
-namespace lua_dissector {
+namespace dissector {
 
 // Stub implementations of Wireshark Lua API functions that dissectors expect
 // These provide minimal functionality to make dissectors loadable
@@ -98,7 +98,7 @@ static void register_wireshark_api(lua_State *L) {
   lua_setglobal(L, "base");
 }
 
-Runtime::Runtime() {
+runtime::runtime() {
   L = luaL_newstate();
   if (!L) {
     std::print("Failed to create Lua state\n");
@@ -112,12 +112,12 @@ Runtime::Runtime() {
   register_wireshark_api(L);
 }
 
-Runtime::~Runtime() {
+runtime::~runtime() {
   if (L)
     lua_close(L);
 }
 
-bool Runtime::load_dissector(const std::string &filepath) {
+bool runtime::load(const std::string &filepath) {
   if (!L)
     return false;
 
@@ -132,13 +132,13 @@ bool Runtime::load_dissector(const std::string &filepath) {
   return true;
 }
 
-std::optional<DissectorResult>
-Runtime::dissect(const uint8_t *payload, size_t length, uint16_t src_port,
-                 uint16_t dst_port, const std::string &protocol) {
+std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
+                                       uint16_t src_port, uint16_t dst_port,
+                                       const std::string &protocol) {
   // For now, just return empty result
   // Full implementation would call dissector.dissector() function
   // and extract protocol info from the tree
   return std::nullopt;
 }
 
-} // namespace lua_dissector
+} // namespace dissector
