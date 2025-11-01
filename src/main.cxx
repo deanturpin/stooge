@@ -6,6 +6,7 @@
 #include <array>
 #include <chrono>
 #include <csignal>
+#include <map>
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -35,6 +36,22 @@ static_assert(SPEEDUP_FACTOR <= 1000.0,
               "Speedup factor seems unreasonably high");
 static_assert(sizeof(uint16_t) == 2, "Port numbers must be 16-bit");
 
+// Map common port numbers to protocol/service names
+std::string port_to_service(uint16_t port) {
+  static const auto services = std::map<uint16_t, std::string>{
+      {20, "FTP-DATA"},  {21, "FTP"},      {22, "SSH"},     {23, "TELNET"},
+      {25, "SMTP"},      {53, "DNS"},      {67, "DHCP"},    {68, "DHCP"},
+      {80, "HTTP"},      {110, "POP3"},    {123, "NTP"},    {143, "IMAP"},
+      {161, "SNMP"},     {443, "HTTPS"},   {445, "SMB"},    {465, "SMTPS"},
+      {587, "SMTP"},     {993, "IMAPS"},   {995, "POP3S"},  {3306, "MYSQL"},
+      {3389, "RDP"},     {5432, "PGSQL"},  {5900, "VNC"},   {6379, "REDIS"},
+      {8080, "HTTP-ALT"},{8443, "HTTPS-ALT"},{27017, "MONGODB"}};
+
+  if (auto it = services.find(port); it != services.end())
+    return it->second;
+  return {};
+}
+
 // Parsed network packet metadata
 struct packet_info {
   std::string src_ip;
@@ -51,17 +68,21 @@ struct packet_info {
     auto src_host = dns::reverse_lookup(src_ip);
     auto dst_host = dns::reverse_lookup(dst_ip);
 
-    // Helper to format IP:port with optional hostname
+    // Helper to format IP:port with optional hostname and service
     auto format_endpoint = [](const std::string &ip, uint16_t port,
                               const std::string &host) {
-      if (!host.empty() && host != ip) {
-        if (port > 0)
-          return std::format("{}:{} ({})", ip, port, host);
-        return std::format("{} ({})", ip, host);
-      }
-      if (port > 0)
-        return std::format("{}:{}", ip, port);
-      return ip;
+      if (port == 0)
+        return host.empty() || host == ip ? ip : std::format("{} ({})", ip, host);
+
+      auto service = port_to_service(port);
+
+      // Build port display: "80/HTTP" or just "80"
+      auto port_display = service.empty() ? std::format("{}", port)
+                                          : std::format("{}/{}", port, service);
+
+      if (!host.empty() && host != ip)
+        return std::format("{}:{} ({})", ip, port_display, host);
+      return std::format("{}:{}", ip, port_display);
     };
 
     auto src = format_endpoint(src_ip, src_port, src_host);
@@ -173,6 +194,9 @@ struct endpoint {
 };
 
 int main(int argc, char *argv[]) {
+  // Disable stdout buffering for real-time output in Docker
+  std::setvbuf(stdout, nullptr, _IONBF, 0);
+
   // Install signal handler for Ctrl+C
   std::signal(SIGINT, signal_handler);
 

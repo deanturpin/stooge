@@ -4,6 +4,8 @@
 
 Network traffic replayer with Lua dissector support - replay PCAP files with timing preservation and protocol analysis.
 
+**Source:** [github.com/deanturpin/stooge](https://github.com/deanturpin/stooge)
+
 ## Quick Start
 
 Run with a PCAP file:
