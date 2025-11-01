@@ -27,7 +27,7 @@ static_assert(SPEEDUP_FACTOR <= 1000.0,
 static_assert(sizeof(uint16_t) == 2, "Port numbers must be 16-bit");
 
 // Parsed network packet metadata
-struct PacketInfo {
+struct packet_info {
   std::string src_ip;
   std::string dst_ip;
   uint16_t src_port = 0;
@@ -60,10 +60,10 @@ struct PacketInfo {
   }
 };
 
-// Parse raw packet data into structured PacketInfo
+// Parse raw packet data into structured packet_info
 // Returns std::nullopt if packet is malformed or not IPv4
-std::optional<PacketInfo> parse_packet(const u_char *packet,
-                                       const struct pcap_pkthdr *header) {
+std::optional<packet_info> parse_packet(const u_char *packet,
+                                        const struct pcap_pkthdr *header) {
   // Verify minimum Ethernet header size
   if (header->caplen < sizeof(struct ether_header))
     return std::nullopt;
@@ -81,7 +81,7 @@ std::optional<PacketInfo> parse_packet(const u_char *packet,
   if (header->caplen < sizeof(struct ether_header) + sizeof(struct ip))
     return std::nullopt;
 
-  auto info = PacketInfo{};
+  auto info = packet_info{};
   auto src_ip = std::array<char, INET_ADDRSTRLEN>{};
   auto dst_ip = std::array<char, INET_ADDRSTRLEN>{};
   inet_ntop(AF_INET, &(iph->ip_src), src_ip.data(), INET_ADDRSTRLEN);
@@ -119,7 +119,7 @@ std::optional<PacketInfo> parse_packet(const u_char *packet,
 }
 
 // Network endpoint for connection tracking (currently unused)
-struct Endpoint {
+struct endpoint {
   std::string ip;
   uint16_t port;
   std::string protocol;
@@ -134,7 +134,7 @@ struct Endpoint {
   }
 
   // Lexicographic ordering for std::set
-  bool operator<(const Endpoint &other) const {
+  bool operator<(const endpoint &other) const {
     if (ip != other.ip)
       return ip < other.ip;
     if (port != other.port)
