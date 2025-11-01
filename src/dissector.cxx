@@ -1,8 +1,21 @@
 // Dissector runtime implementation
 #include "dissector.hxx"
+#include <cstring>
 #include <print>
 
 namespace dissector {
+
+// Buffer wrapper for Lua - holds packet data
+struct buffer_wrapper {
+  const uint8_t *data;
+  size_t length;
+};
+
+// Packet info captured by dissector
+struct pinfo_data {
+  std::string protocol;
+  std::string info;
+};
 
 // Stub implementations of Wireshark Lua API functions that dissectors expect
 // These provide minimal functionality to make dissectors loadable
@@ -132,13 +145,108 @@ bool runtime::load(const std::string &filepath) {
   return true;
 }
 
+// Buffer metatable methods
+static int buffer_len(lua_State *L) {
+  auto buf = static_cast<buffer_wrapper *>(lua_touserdata(L, 1));
+  lua_pushinteger(L, buf->length);
+  return 1;
+}
+
+static int buffer_call(lua_State *L) {
+  auto buf = static_cast<buffer_wrapper *>(lua_touserdata(L, 1));
+  // buffer() returns entire buffer, buffer(offset, length) returns substring
+  // For simplicity, just return a new buffer userdata
+  auto newbuf =
+      static_cast<buffer_wrapper *>(lua_newuserdata(L, sizeof(buffer_wrapper)));
+  newbuf->data = buf->data;
+  newbuf->length = buf->length;
+
+  // Add metatable with __tostring method
+  lua_newtable(L);
+  lua_pushcfunction(L, [](lua_State *L) -> int {
+    auto b = static_cast<buffer_wrapper *>(lua_touserdata(L, 1));
+    lua_pushlstring(L, reinterpret_cast<const char *>(b->data), b->length);
+    return 1;
+  });
+  lua_setfield(L, -2, "string");
+  lua_setmetatable(L, -2);
+
+  return 1;
+}
+
 std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
                                        uint16_t src_port, uint16_t dst_port,
                                        const std::string &protocol) {
-  // For now, just return empty result
-  // Full implementation would call dissector.dissector() function
-  // and extract protocol info from the tree
-  return std::nullopt;
+  if (!L || length == 0)
+    return std::nullopt;
+
+  // Try HTTP dissector for port 80, 8080, 443
+  auto proto_name = std::string{};
+  if (protocol == "TCP" && (dst_port == 80 || dst_port == 8080 ||
+                            src_port == 80 || src_port == 8080))
+    proto_name = "http_custom";
+  else if (protocol == "UDP" && (dst_port == 53 || src_port == 53))
+    proto_name = "dns_custom";
+  else
+    return std::nullopt;
+
+  // Get the protocol object
+  lua_getglobal(L, proto_name.c_str());
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    return std::nullopt;
+  }
+
+  // Get the dissector function
+  lua_getfield(L, -1, "dissector");
+  if (!lua_isfunction(L, -1)) {
+    lua_pop(L, 2);
+    return std::nullopt;
+  }
+
+  // Create buffer userdata
+  auto buf =
+      static_cast<buffer_wrapper *>(lua_newuserdata(L, sizeof(buffer_wrapper)));
+  buf->data = payload;
+  buf->length = length;
+
+  // Set buffer metatable
+  lua_newtable(L);
+  lua_pushcfunction(L, buffer_len);
+  lua_setfield(L, -2, "len");
+  lua_pushcfunction(L, buffer_call);
+  lua_setfield(L, -2, "__call");
+  lua_setmetatable(L, -2);
+
+  // Create pinfo table
+  lua_newtable(L);
+  lua_newtable(L); // pinfo.cols
+  lua_setfield(L, -2, "cols");
+
+  // Create tree table (dummy)
+  lua_newtable(L);
+  lua_pushcfunction(L, [](lua_State *L) -> int {
+    // tree:add() just returns another tree
+    lua_newtable(L);
+    return 1;
+  });
+  lua_setfield(L, -2, "add");
+
+  // Call dissector function: dissector(buffer, pinfo, tree)
+  if (lua_pcall(L, 3, 0, 0) != LUA_OK) {
+    auto error = std::string{lua_tostring(L, -1)};
+    std::print("Dissector error: {}\n", error);
+    lua_pop(L, 2); // Pop error and proto
+    return std::nullopt;
+  }
+
+  lua_pop(L, 1); // Pop proto
+
+  // For now, return simple result
+  auto res = result{};
+  res.protocol = proto_name;
+  res.info = "Dissected";
+  return res;
 }
 
 } // namespace dissector
