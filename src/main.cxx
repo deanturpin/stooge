@@ -26,9 +26,7 @@ constexpr auto SPEEDUP_FACTOR = 4.0;
 static volatile sig_atomic_t stop_capture = 0;
 
 // Signal handler for graceful shutdown
-static void signal_handler(int signum) {
-  stop_capture = 1;
-}
+static void signal_handler(int signum) { stop_capture = 1; }
 
 // Compile-time validation
 static_assert(SPEEDUP_FACTOR > 0.0, "Speedup factor must be positive");
@@ -39,13 +37,15 @@ static_assert(sizeof(uint16_t) == 2, "Port numbers must be 16-bit");
 // Map common port numbers to protocol/service names
 std::string port_to_service(uint16_t port) {
   static const auto services = std::map<uint16_t, std::string>{
-      {20, "FTP-DATA"},  {21, "FTP"},      {22, "SSH"},     {23, "TELNET"},
-      {25, "SMTP"},      {53, "DNS"},      {67, "DHCP"},    {68, "DHCP"},
-      {80, "HTTP"},      {110, "POP3"},    {123, "NTP"},    {143, "IMAP"},
-      {161, "SNMP"},     {443, "HTTPS"},   {445, "SMB"},    {465, "SMTPS"},
-      {587, "SMTP"},     {993, "IMAPS"},   {995, "POP3S"},  {3306, "MYSQL"},
-      {3389, "RDP"},     {5432, "PGSQL"},  {5900, "VNC"},   {6379, "REDIS"},
-      {8080, "HTTP-ALT"},{8443, "HTTPS-ALT"},{27017, "MONGODB"}};
+      {20, "FTP-DATA"},   {21, "FTP"},         {22, "SSH"},
+      {23, "TELNET"},     {25, "SMTP"},        {53, "DNS"},
+      {67, "DHCP"},       {68, "DHCP"},        {80, "HTTP"},
+      {110, "POP3"},      {123, "NTP"},        {143, "IMAP"},
+      {161, "SNMP"},      {443, "HTTPS"},      {445, "SMB"},
+      {465, "SMTPS"},     {587, "SMTP"},       {993, "IMAPS"},
+      {995, "POP3S"},     {3306, "MYSQL"},     {3389, "RDP"},
+      {5432, "PGSQL"},    {5900, "VNC"},       {6379, "REDIS"},
+      {8080, "HTTP-ALT"}, {8443, "HTTPS-ALT"}, {27017, "MONGODB"}};
 
   if (auto it = services.find(port); it != services.end())
     return it->second;
@@ -72,7 +72,8 @@ struct packet_info {
     auto format_endpoint = [](const std::string &ip, uint16_t port,
                               const std::string &host) {
       if (port == 0)
-        return host.empty() || host == ip ? ip : std::format("{} ({})", ip, host);
+        return host.empty() || host == ip ? ip
+                                          : std::format("{} ({})", ip, host);
 
       auto service = port_to_service(port);
 
@@ -209,18 +210,39 @@ int main(int argc, char *argv[]) {
     // Live mode - capture from default interface
     live_mode = true;
 
-    // Find default device
-    auto dev = pcap_lookupdev(errbuf.data());
-    if (!dev) {
-      std::print("Error finding default interface: {}\n", errbuf.data());
+    // Find best network interface (prefer en0 on macOS, eth0 on Linux)
+    pcap_if_t *alldevs = nullptr;
+    if (pcap_findalldevs(&alldevs, errbuf.data()) == -1 || !alldevs) {
+      std::print("Error finding network interfaces: {}\n", errbuf.data());
       std::print("Try specifying a file: {} <pcap-file>\n", argv[0]);
       return 1;
     }
 
+    // Try to find en0 (macOS Wi-Fi) or eth0 (Linux), otherwise use first
+    // non-loopback interface
+    std::string dev_name;
+    for (auto d = alldevs; d != nullptr; d = d->next) {
+      if (std::string{d->name} == "en0" || std::string{d->name} == "eth0") {
+        dev_name = d->name;
+        break;
+      }
+      if (dev_name.empty() && std::string{d->name} != "lo" &&
+          std::string{d->name} != "lo0")
+        dev_name = d->name; // Fallback to first non-loopback
+    }
+
+    if (dev_name.empty()) {
+      std::print("No suitable network interface found\n");
+      pcap_freealldevs(alldevs);
+      return 1;
+    }
+
     // Open live capture
-    handle = pcap_open_live(dev, 65535, 1, 1000, errbuf.data());
+    handle = pcap_open_live(dev_name.c_str(), 65535, 1, 1000, errbuf.data());
+    pcap_freealldevs(alldevs);
+
     if (!handle) {
-      std::print("Error opening interface {}: {}\n", dev, errbuf.data());
+      std::print("Error opening interface {}: {}\n", dev_name, errbuf.data());
       std::print("\nLive capture requires elevated privileges.\n");
       std::print("Try one of:\n");
       std::print("  1. Run with sudo: sudo {} {}\n", argv[0],
@@ -231,7 +253,7 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    std::print("Live capture on {} (press Ctrl+C to stop)\n\n", dev);
+    std::print("Live capture on {} (press Ctrl+C to stop)\n\n", dev_name);
   } else if (argc == 2) {
     // Replay mode - read from file
     auto filename = argv[1];
@@ -286,9 +308,9 @@ int main(int argc, char *argv[]) {
       }
 
       // Calculate time offset from first packet
-      packet_offset = (header->ts.tv_sec - first_packet_time->tv_sec) +
-                      (header->ts.tv_usec - first_packet_time->tv_usec) /
-                          1000000.0;
+      packet_offset =
+          (header->ts.tv_sec - first_packet_time->tv_sec) +
+          (header->ts.tv_usec - first_packet_time->tv_usec) / 1000000.0;
 
       // Scale the delay and calculate target wake time
       auto scaled_offset =

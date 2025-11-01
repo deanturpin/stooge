@@ -121,7 +121,8 @@ runtime::runtime() {
   // Open standard libraries
   luaL_openlibs(L);
 
-  // Register bit32 stubs (Lua 5.4 removed bit32, provide minimal implementation)
+  // Register bit32 stubs (Lua 5.4 removed bit32, provide minimal
+  // implementation)
   lua_newtable(L);
   lua_pushcfunction(L, [](lua_State *L) -> int {
     auto val = luaL_checkinteger(L, 1);
@@ -176,7 +177,7 @@ static int buffer_uint(lua_State *L) {
   if (buf->length == 1) {
     lua_pushinteger(L, buf->data[0]);
   } else if (buf->length == 2) {
-    uint16_t val = (buf->data[0] << 8) | buf->data[1];  // Big-endian
+    uint16_t val = (buf->data[0] << 8) | buf->data[1]; // Big-endian
     lua_pushinteger(L, val);
   } else if (buf->length == 4) {
     uint32_t val = (buf->data[0] << 24) | (buf->data[1] << 16) |
@@ -324,14 +325,14 @@ std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
   lua_newtable(L); // methods table
   lua_pushcfunction(L, [](lua_State *L) -> int {
     // tree:add() - returns a new tree with same metatable
-    lua_newtable(L); // new tree
+    lua_newtable(L);        // new tree
     lua_getmetatable(L, 1); // Copy metatable from self
     lua_setmetatable(L, -2);
     return 1;
   });
   lua_setfield(L, -2, "add");
   lua_setfield(L, -2, "__index"); // metatable.__index = methods table
-  lua_setmetatable(L, -2); // Set metatable on tree
+  lua_setmetatable(L, -2);        // Set metatable on tree
 
   // Call dissector function: dissector(buffer, pinfo, tree)
   if (lua_pcall(L, 3, 0, 0) != LUA_OK) {
