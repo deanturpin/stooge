@@ -1,7 +1,7 @@
 # Makefile for stooge - network traffic replayer
 # All builds run in Docker containers to ensure consistent environment
 
-.PHONY: all build run test clean deploy format install
+.PHONY: all build run live test clean deploy format install
 
 IMAGE := deanturpin/stooge
 
@@ -19,6 +19,11 @@ build:
 # Run container with sample PCAP file
 run:
 	docker run --rm -v $(PWD):/data $(IMAGE) /data/laptop.pcapng
+
+# Run live capture (requires elevated privileges)
+live:
+	@echo "Starting live capture (requires sudo/elevated privileges)..."
+	docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW --net=host $(IMAGE)
 
 # Run tests (not yet implemented)
 test:

@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <array>
 #include <chrono>
+#include <csignal>
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -19,6 +20,14 @@
 // Replay speed multiplier - 10x means packets play back 10 times faster than
 // captured
 constexpr double SPEEDUP_FACTOR = 10.0;
+
+// Global flag for signal handling
+static volatile sig_atomic_t stop_capture = 0;
+
+// Signal handler for graceful shutdown
+static void signal_handler(int signum) {
+  stop_capture = 1;
+}
 
 // Compile-time validation
 static_assert(SPEEDUP_FACTOR > 0.0, "Speedup factor must be positive");
@@ -164,24 +173,58 @@ struct endpoint {
 };
 
 int main(int argc, char *argv[]) {
-  // Validate command line arguments
-  if (argc != 2) {
-    std::print("Usage: {} <pcap-file>\n", argv[0]);
-    return 1;
-  }
+  // Install signal handler for Ctrl+C
+  std::signal(SIGINT, signal_handler);
 
-  auto filename = argv[1];
   auto errbuf = std::array<char, PCAP_ERRBUF_SIZE>{};
+  pcap_t *handle = nullptr;
+  auto live_mode = false;
 
-  // Open PCAP file for offline analysis
-  auto handle = pcap_open_offline(filename, errbuf.data());
-  if (!handle) {
-    std::print("Error opening file {}: {}\n", filename, errbuf.data());
+  // Determine mode: live capture or file replay
+  if (argc == 1) {
+    // Live mode - capture from default interface
+    live_mode = true;
+
+    // Find default device
+    auto dev = pcap_lookupdev(errbuf.data());
+    if (!dev) {
+      std::print("Error finding default interface: {}\n", errbuf.data());
+      std::print("Try specifying a file: {} <pcap-file>\n", argv[0]);
+      return 1;
+    }
+
+    // Open live capture
+    handle = pcap_open_live(dev, 65535, 1, 1000, errbuf.data());
+    if (!handle) {
+      std::print("Error opening interface {}: {}\n", dev, errbuf.data());
+      std::print("\nLive capture requires elevated privileges.\n");
+      std::print("Try one of:\n");
+      std::print("  1. Run with sudo: sudo {} {}\n", argv[0],
+                 argc > 1 ? argv[1] : "");
+      std::print("  2. Grant capabilities: sudo setcap "
+                 "cap_net_raw,cap_net_admin=eip {}\n",
+                 argv[0]);
+      return 1;
+    }
+
+    std::print("Live capture on {} (press Ctrl+C to stop)\n\n", dev);
+  } else if (argc == 2) {
+    // Replay mode - read from file
+    auto filename = argv[1];
+    handle = pcap_open_offline(filename, errbuf.data());
+    if (!handle) {
+      std::print("Error opening file {}: {}\n", filename, errbuf.data());
+      return 1;
+    }
+
+    std::print("Successfully opened PCAP file: {}\n", filename);
+    std::print("Replay speed: {}x\n\n", SPEEDUP_FACTOR);
+  } else {
+    std::print("Usage:\n");
+    std::print("  {}              # Live capture mode\n", argv[0]);
+    std::print("  {} <pcap-file>  # Replay mode\n", argv[0]);
     return 1;
   }
-
-  std::print("Successfully opened PCAP file: {}\n", filename);
-  std::print("Replay speed: {}x\n\n", SPEEDUP_FACTOR);
 
   // Initialise dissector runtime
   auto dissectors = dissector::runtime{};
@@ -201,45 +244,54 @@ int main(int argc, char *argv[]) {
   auto start_time = std::optional<std::chrono::steady_clock::time_point>{};
   auto first_packet_time = std::optional<struct timeval>{};
 
-  std::print("Beginning replay...\n\n");
+  if (!live_mode)
+    std::print("Beginning replay...\n\n");
 
-  // Process packets, honouring original timing scaled by SPEEDUP_FACTOR
-  while (pcap_next_ex(handle, &header, &packet) == 1) {
+  // Process packets
+  while (!stop_capture && pcap_next_ex(handle, &header, &packet) == 1) {
     packet_count++;
 
-    // Record start time on first packet
-    if (!first_packet_time) {
-      first_packet_time = header->ts;
-      start_time = std::chrono::steady_clock::now();
+    auto packet_offset = 0.0;
+
+    // Only do timing for replay mode
+    if (!live_mode) {
+      // Record start time on first packet
+      if (!first_packet_time) {
+        first_packet_time = header->ts;
+        start_time = std::chrono::steady_clock::now();
+      }
+
+      // Calculate time offset from first packet
+      packet_offset = (header->ts.tv_sec - first_packet_time->tv_sec) +
+                      (header->ts.tv_usec - first_packet_time->tv_usec) /
+                          1000000.0;
+
+      // Scale the delay and calculate target wake time
+      auto scaled_offset =
+          std::chrono::duration<double>(packet_offset / SPEEDUP_FACTOR);
+      auto target_time =
+          *start_time +
+          std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+              scaled_offset);
+
+      // Sleep until it's time to display this packet
+      std::this_thread::sleep_until(target_time);
     }
-
-    // Calculate time offset from first packet
-    auto packet_offset =
-        (header->ts.tv_sec - first_packet_time->tv_sec) +
-        (header->ts.tv_usec - first_packet_time->tv_usec) / 1000000.0;
-
-    // Scale the delay and calculate target wake time
-    auto scaled_offset =
-        std::chrono::duration<double>(packet_offset / SPEEDUP_FACTOR);
-    auto target_time =
-        *start_time +
-        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-            scaled_offset);
-
-    // Sleep until it's time to display this packet
-    std::this_thread::sleep_until(target_time);
 
     // Parse and display packet information
     auto info = parse_packet(packet, header);
     if (info) {
-      std::print("[{:6d}] {:8.3f}s: {}\n", packet_count, packet_offset,
-                 info->describe());
+      if (live_mode)
+        std::print("[{:6d}] {}\n", packet_count, info->describe());
+      else
+        std::print("[{:6d}] {:8.3f}s: {}\n", packet_count, packet_offset,
+                   info->describe());
 
       // Try to dissect application-layer protocol
       if (info->payload && info->payload_length > 0) {
-        auto dissected = dissectors.dissect(
-            info->payload, info->payload_length, info->src_port,
-            info->dst_port, info->protocol);
+        auto dissected =
+            dissectors.dissect(info->payload, info->payload_length,
+                               info->src_port, info->dst_port, info->protocol);
         if (dissected)
           std::print("         └─ {} {}\n", dissected->protocol,
                      dissected->info);
@@ -247,7 +299,10 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  std::print("\n\nReplay complete!\n");
+  if (live_mode)
+    std::print("\n\nCapture complete!\n");
+  else
+    std::print("\n\nReplay complete!\n");
   std::print("Total packets: {}\n", packet_count);
 
   // Wait for any remaining DNS lookups to complete
