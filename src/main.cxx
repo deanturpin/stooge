@@ -34,6 +34,8 @@ struct packet_info {
   uint16_t dst_port = 0;
   std::string protocol;
   size_t length = 0;
+  const uint8_t *payload = nullptr; // Application-layer payload
+  size_t payload_length = 0;
 
   // Format packet information as human-readable string with hostnames
   std::string describe() const {
@@ -90,7 +92,7 @@ std::optional<packet_info> parse_packet(const u_char *packet,
   info.dst_ip = dst_ip.data();
   info.length = header->len;
 
-  // Extract TCP port numbers if available
+  // Extract TCP port numbers and payload if available
   if (iph->ip_p == IPPROTO_TCP) {
     auto tcph = reinterpret_cast<const struct tcphdr *>(
         packet + sizeof(struct ether_header) + sizeof(struct ip));
@@ -99,9 +101,19 @@ std::optional<packet_info> parse_packet(const u_char *packet,
       info.protocol = "TCP";
       info.src_port = ntohs(tcph->th_sport);
       info.dst_port = ntohs(tcph->th_dport);
+
+      // Calculate TCP header length (data offset is in 32-bit words)
+      auto tcp_header_len = tcph->th_off * 4;
+      auto payload_offset =
+          sizeof(struct ether_header) + sizeof(struct ip) + tcp_header_len;
+
+      if (header->caplen > payload_offset) {
+        info.payload = packet + payload_offset;
+        info.payload_length = header->caplen - payload_offset;
+      }
     }
   } else if (iph->ip_p == IPPROTO_UDP) {
-    // Extract UDP port numbers if available
+    // Extract UDP port numbers and payload if available
     auto udph = reinterpret_cast<const struct udphdr *>(
         packet + sizeof(struct ether_header) + sizeof(struct ip));
     if (header->caplen >= sizeof(struct ether_header) + sizeof(struct ip) +
@@ -109,6 +121,14 @@ std::optional<packet_info> parse_packet(const u_char *packet,
       info.protocol = "UDP";
       info.src_port = ntohs(udph->uh_sport);
       info.dst_port = ntohs(udph->uh_dport);
+
+      auto payload_offset = sizeof(struct ether_header) + sizeof(struct ip) +
+                            sizeof(struct udphdr);
+
+      if (header->caplen > payload_offset) {
+        info.payload = packet + payload_offset;
+        info.payload_length = header->caplen - payload_offset;
+      }
     }
   } else {
     // Other IP protocols (ICMP, etc.)
@@ -211,9 +231,20 @@ int main(int argc, char *argv[]) {
 
     // Parse and display packet information
     auto info = parse_packet(packet, header);
-    if (info)
+    if (info) {
       std::print("[{:6d}] {:8.3f}s: {}\n", packet_count, packet_offset,
                  info->describe());
+
+      // Try to dissect application-layer protocol
+      if (info->payload && info->payload_length > 0) {
+        auto dissected = dissectors.dissect(
+            info->payload, info->payload_length, info->src_port,
+            info->dst_port, info->protocol);
+        if (dissected)
+          std::print("         └─ {} {}\n", dissected->protocol,
+                     dissected->info);
+      }
+    }
   }
 
   std::print("\n\nReplay complete!\n");
