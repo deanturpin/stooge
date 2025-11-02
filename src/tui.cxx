@@ -107,7 +107,7 @@ void renderer::render_loop() {
   auto component = Renderer([&] {
     // Get current data
     auto endpoints = store_->get_endpoints();
-    auto packets = store_->get_recent_packets(50);
+    auto packets = store_->get_recent_packets(500);
     auto total = store_->get_total_packets();
 
     // Build endpoint list (left pane)
@@ -129,7 +129,8 @@ void renderer::render_loop() {
     }
 
     auto endpoint_pane =
-        vbox(endpoint_elements) | frame | size(WIDTH, EQUAL, 40);
+        vbox(endpoint_elements) | vscroll_indicator | frame |
+        size(WIDTH, EQUAL, 40);
 
     // Build packet list (right pane)
     auto packet_elements = std::vector<Element>{};
@@ -160,15 +161,17 @@ void renderer::render_loop() {
       }
     }
 
-    auto packet_pane = vbox(packet_elements) | frame | flex;
+    auto packet_pane = vbox(packet_elements) | vscroll_indicator | frame | flex;
 
     // Combine panes horizontally
     return hbox({endpoint_pane, separator(), packet_pane}) | border;
   });
 
-  // Capture component to handle exit
+  // Capture component to handle exit (including Ctrl+C)
   auto component_with_quit = CatchEvent(component, [&](Event event) {
-    if (event == Event::Character('q') || event == Event::Escape) {
+    if (event == Event::Character('q') || event == Event::Escape ||
+        event.is_character() && event.character() == "c" &&
+            event.input() == "\x03") {
       running_ = false;
       screen.Exit();
       return true;
