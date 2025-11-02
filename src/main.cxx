@@ -2,11 +2,13 @@
 // resolution
 #include "dissector.hxx"
 #include "dns.hxx"
+#include "oui.hxx"
 #include "tui.hxx"
 #include <arpa/inet.h>
 #include <array>
 #include <chrono>
 #include <csignal>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <netinet/if_ether.h>
@@ -63,6 +65,8 @@ std::string port_to_service(uint16_t port) {
 struct packet_info {
   std::string src_ip;
   std::string dst_ip;
+  std::array<uint8_t, 6> src_mac{};
+  std::array<uint8_t, 6> dst_mac{};
   uint16_t src_port = 0;
   uint16_t dst_port = 0;
   std::string protocol;
@@ -114,6 +118,12 @@ std::optional<packet_info> parse_packet(const u_char *packet,
   if (ntohs(eth->ether_type) != ETHERTYPE_IP)
     return std::nullopt;
 
+  auto info = packet_info{};
+
+  // Extract MAC addresses
+  std::memcpy(info.src_mac.data(), eth->ether_shost, 6);
+  std::memcpy(info.dst_mac.data(), eth->ether_dhost, 6);
+
   auto iph =
       reinterpret_cast<const struct ip *>(packet + sizeof(struct ether_header));
 
@@ -121,7 +131,6 @@ std::optional<packet_info> parse_packet(const u_char *packet,
   if (header->caplen < sizeof(struct ether_header) + sizeof(struct ip))
     return std::nullopt;
 
-  auto info = packet_info{};
   auto src_ip = std::array<char, INET_ADDRSTRLEN>{};
   auto dst_ip = std::array<char, INET_ADDRSTRLEN>{};
   inet_ntop(AF_INET, &(iph->ip_src), src_ip.data(), INET_ADDRSTRLEN);
@@ -205,8 +214,9 @@ int main(int argc, char *argv[]) {
   // Disable stdout buffering for real-time output in Docker
   std::setvbuf(stdout, nullptr, _IONBF, 0);
 
-  // Install signal handler for Ctrl+C
-  std::signal(SIGINT, signal_handler);
+  // Install signal handlers for graceful shutdown
+  std::signal(SIGINT, signal_handler);  // Ctrl+C
+  std::signal(SIGTERM, signal_handler); // docker stop/kill
 
   auto errbuf = std::array<char, PCAP_ERRBUF_SIZE>{};
   pcap_t *handle = nullptr;
@@ -283,17 +293,13 @@ int main(int argc, char *argv[]) {
   auto dissectors = dissector::runtime{};
   dissectors.load("dissectors/http.lua");
   dissectors.load("dissectors/dns.lua");
-  std::print("Loaded dissectors\n\n");
 
-  // Display data link layer information
-  auto datalink = pcap_datalink(handle);
-  std::print("Data link type: {} ({})\n\n", pcap_datalink_val_to_name(datalink),
-             pcap_datalink_val_to_description(datalink));
-
-  // Initialise TUI
+  // Initialise TUI data store (but don't start renderer yet)
   auto tui_store = std::make_shared<tui::data_store>();
   auto tui_renderer = tui::renderer{tui_store};
   global_renderer = &tui_renderer;
+
+  // Start TUI renderer - this will take over the screen
   tui_renderer.start();
 
   // Packet iteration state
@@ -340,10 +346,12 @@ int main(int argc, char *argv[]) {
       // Add endpoint information to TUI
       auto src_host = dns::reverse_lookup(info->src_ip);
       auto dst_host = dns::reverse_lookup(info->dst_ip);
+      auto src_vendor = oui::lookup_vendor(info->src_mac);
+      auto dst_vendor = oui::lookup_vendor(info->dst_mac);
       tui_store->add_endpoint(info->src_ip, info->src_port, info->protocol,
-                              src_host);
+                              src_host, src_vendor);
       tui_store->add_endpoint(info->dst_ip, info->dst_port, info->protocol,
-                              dst_host);
+                              dst_host, dst_vendor);
 
       // Build packet entry for TUI
       auto format_endpoint = [](const std::string &ip, uint16_t port,

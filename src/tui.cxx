@@ -13,14 +13,16 @@ std::string endpoint_stats::to_string() const {
   auto port_str = port > 0 ? std::format(":{}", port) : "";
   auto host_str =
       !hostname.empty() && hostname != ip ? std::format(" ({})", hostname) : "";
-  return std::format("{}{} [{}]{} - {} pkts", ip, port_str, protocol, host_str,
-                     packet_count);
+  auto vendor_str = !vendor.empty() ? std::format(" [{}]", vendor) : "";
+  return std::format("{}{} [{}]{}{} - {} pkts", ip, port_str, protocol,
+                     host_str, vendor_str, packet_count);
 }
 
 // data_store implementation
 void data_store::add_endpoint(const std::string &ip, uint16_t port,
                                const std::string &protocol,
-                               const std::string &hostname) {
+                               const std::string &hostname,
+                               const std::string &vendor) {
   auto lock = std::lock_guard{mutex_};
   auto key = std::format("{}:{}:{}", ip, port, protocol);
 
@@ -30,6 +32,8 @@ void data_store::add_endpoint(const std::string &ip, uint16_t port,
   ep.protocol = protocol;
   if (!hostname.empty())
     ep.hostname = hostname;
+  if (!vendor.empty())
+    ep.vendor = vendor;
   ep.packet_count++;
   ep.last_seen = std::chrono::steady_clock::now();
 }
@@ -105,7 +109,28 @@ void renderer::render_loop() {
 
   // Component that renders the UI
   auto component = Renderer([&] {
-    // Get current data
+    // If help is shown, display help overlay
+    if (show_help_) {
+      auto help_lines = Elements{
+          text("Keyboard Shortcuts") | bold | center,
+          separator(),
+          text(""),
+          text("  q / Esc     Quit application"),
+          text("  p           Pause/unpause display"),
+          text("  h / ?       Toggle this help"),
+          text("  Ctrl+C      Quit application"),
+          text(""),
+          text("Press any key to close") | dim | center,
+      };
+
+      auto help_content = vbox(help_lines) | border | bgcolor(Color::Blue) |
+                          size(WIDTH, EQUAL, 40) | size(HEIGHT, EQUAL, 12) |
+                          center | vcenter;
+
+      return help_content | clear_under;
+    }
+
+    // Get current data (frozen if paused)
     auto endpoints = store_->get_endpoints();
     auto packets = store_->get_recent_packets(500);
     auto total = store_->get_total_packets();
@@ -134,9 +159,9 @@ void renderer::render_loop() {
 
     // Build packet list (right pane)
     auto packet_elements = std::vector<Element>{};
-    packet_elements.push_back(
-        text(std::format("Live Packets (Total: {})", total)) | bold |
-        color(Color::Cyan));
+    auto status_text = paused_ ? "PAUSED" : std::format("Total: {}", total);
+    packet_elements.push_back(text(std::format("Live Packets ({})", status_text)) |
+                              bold | color(paused_ ? Color::Red : Color::Cyan));
     packet_elements.push_back(separator());
 
     for (const auto &pkt : packets) {
@@ -163,31 +188,60 @@ void renderer::render_loop() {
 
     auto packet_pane = vbox(packet_elements) | vscroll_indicator | frame | flex;
 
-    // Combine panes horizontally
-    return hbox({endpoint_pane, separator(), packet_pane}) | border;
+    // Status bar with shortcuts hint
+    auto status_bar =
+        hbox({text("Shortcuts: ") | dim, text("q") | bold, text("/Esc=Quit ") | dim,
+              text("p") | bold, text("=Pause ") | dim, text("h") | bold,
+              text("/?=Help") | dim}) |
+        bgcolor(Color::GrayDark);
+
+    // Combine panes horizontally with status bar
+    return vbox({hbox({endpoint_pane, separator(), packet_pane}) | border | flex,
+                 status_bar});
   });
 
-  // Capture component to handle exit (including Ctrl+C)
-  auto component_with_quit = CatchEvent(component, [&](Event event) {
+  // Capture component to handle keyboard shortcuts
+  auto component_with_shortcuts = CatchEvent(component, [&](Event event) {
+    // Quit shortcuts: q, Esc, Ctrl+C
     if (event == Event::Character('q') || event == Event::Escape ||
-        event.is_character() && event.character() == "c" &&
-            event.input() == "\x03") {
+        (event.is_character() && event.character() == "c" &&
+         event.input() == "\x03")) {
       running_ = false;
       screen.Exit();
       return true;
     }
+
+    // Toggle help: h or ?
+    if (event == Event::Character('h') || event == Event::Character('?')) {
+      show_help_ = !show_help_;
+      return true;
+    }
+
+    // Close help with any key when showing help
+    if (show_help_ && event.is_character()) {
+      show_help_ = false;
+      return true;
+    }
+
+    // Pause/unpause: p
+    if (event == Event::Character('p')) {
+      paused_ = !paused_;
+      return true;
+    }
+
     return false;
   });
 
-  // Refresh periodically
+  // Refresh periodically (only when not paused)
   std::thread refresh_thread([&]() {
     while (running_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      screen.PostEvent(Event::Custom);
+      if (!paused_)
+        screen.PostEvent(Event::Custom);
     }
   });
 
-  screen.Loop(component_with_quit);
+  screen.Loop(component_with_shortcuts);
   refresh_thread.join();
 }
 

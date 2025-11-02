@@ -17,6 +17,7 @@ struct endpoint_stats {
   uint16_t port;
   std::string protocol;
   std::string hostname; // Cached DNS lookup
+  std::string vendor;   // MAC vendor
   size_t packet_count = 0;
   std::chrono::steady_clock::time_point last_seen;
 
@@ -39,7 +40,8 @@ class data_store {
 public:
   // Add or update endpoint statistics
   void add_endpoint(const std::string &ip, uint16_t port,
-                    const std::string &protocol, const std::string &hostname);
+                    const std::string &protocol, const std::string &hostname,
+                    const std::string &vendor = "");
 
   // Add packet entry to scrolling feed
   void add_packet(const packet_entry &entry);
@@ -79,6 +81,8 @@ public:
 private:
   std::shared_ptr<data_store> store_;
   bool running_ = false;
+  bool paused_ = false;
+  bool show_help_ = false;
   std::unique_ptr<std::thread> render_thread_;
 
   void render_loop();
