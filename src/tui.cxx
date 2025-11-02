@@ -10,13 +10,16 @@
 namespace tui {
 
 std::string endpoint_stats::to_string() const {
-  auto port_str = port > 0 ? std::format(":{}", port) : "";
-  auto host_str =
-      !hostname.empty() && hostname != ip ? std::format(" ({})", hostname) : "";
-  auto vendor_str = !vendor.empty() ? std::format(" [{}]", vendor) : "";
-  auto mac_str = !mac_address.empty() ? std::format(" MAC:{}", mac_address) : "";
-  return std::format("{}{} [{}]{}{}{} - {} pkts", ip, port_str, protocol,
-                     host_str, vendor_str, mac_str, packet_count);
+  // Format: IP:port Protocol MAC Vendor Hostname Pkts
+  auto ip_port = port > 0 ? std::format("{}:{}", ip, port) : ip;
+  auto mac_str = mac_address.empty() ? "-" : mac_address;
+  auto vendor_str = vendor.empty() ? "-" : vendor;
+  auto host_str = hostname.empty() || hostname == ip ? "-" : hostname;
+
+  return std::format("{:21} {:8} {:17} {:20} {:30} {:5}",
+                     ip_port.substr(0, 21), protocol.substr(0, 8),
+                     mac_str.substr(0, 17), vendor_str.substr(0, 20),
+                     host_str.substr(0, 30), packet_count);
 }
 
 // data_store implementation
@@ -142,6 +145,12 @@ void renderer::render_loop() {
     // Build endpoint list (left pane)
     auto endpoint_elements = std::vector<Element>{};
     endpoint_elements.push_back(text("Endpoints") | bold | color(Color::Cyan));
+    endpoint_elements.push_back(separator());
+
+    // Column headers
+    auto header = std::format("{:21} {:8} {:17} {:20} {:30} {:5}",
+                              "IP:Port", "Protocol", "MAC", "Vendor", "Hostname", "Pkts");
+    endpoint_elements.push_back(text(header) | bold | color(Color::White));
     endpoint_elements.push_back(separator());
 
     for (const auto &ep : endpoints) {
