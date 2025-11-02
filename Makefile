@@ -16,9 +16,13 @@ format:
 build:
 	docker build -t $(IMAGE) .
 
-# Run container with sample PCAP file
+# Run container with sample PCAP file (interactive TUI mode)
 run:
 	docker run --rm -it -v $(PWD):/data $(IMAGE) /data/laptop.pcapng
+
+# Run container in text mode (no TTY required)
+run-text:
+	docker run --rm -v $(PWD):/data --entrypoint /app/build/stooge $(IMAGE) --no-tui /data/laptop.pcapng
 
 # Run live capture (requires elevated privileges)
 live:
