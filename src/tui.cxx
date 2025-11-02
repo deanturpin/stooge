@@ -12,10 +12,10 @@ namespace tui {
 
 std::string endpoint_stats::to_string() const {
   // Format: IP:port Protocol MAC Vendor Hostname Pkts
-  auto ip_port = port > 0 ? std::format("{}:{}", ip, port) : ip;
-  auto mac_str = mac_address.empty() ? "-" : mac_address;
-  auto vendor_str = vendor.empty() ? "-" : vendor;
-  auto host_str = hostname.empty() || hostname == ip ? "-" : hostname;
+  auto ip_port = std::string{port > 0 ? std::format("{}:{}", ip, port) : ip};
+  auto mac_str = std::string{mac_address.empty() ? "-" : mac_address};
+  auto vendor_str = std::string{vendor.empty() ? "-" : vendor};
+  auto host_str = std::string{hostname.empty() || hostname == ip ? "-" : hostname};
 
   return std::format("{:21} {:8} {:17} {:20} {:30} {:5}",
                      ip_port.substr(0, 21), protocol.substr(0, 8),
@@ -29,8 +29,8 @@ void data_store::add_endpoint(const std::string &ip, uint16_t port,
                                const std::string &hostname,
                                const std::string &vendor,
                                const std::string &mac_address) {
-  auto lock = std::lock_guard{mutex_};
-  auto key = std::format("{}:{}:{}", ip, port, protocol);
+  auto lock = std::lock_guard<std::mutex>{mutex_};
+  auto key = std::string{std::format("{}:{}:{}", ip, port, protocol)};
 
   auto &ep = endpoints_[key];
   ep.ip = ip;
@@ -47,7 +47,7 @@ void data_store::add_endpoint(const std::string &ip, uint16_t port,
 }
 
 void data_store::add_packet(const packet_entry &entry) {
-  auto lock = std::lock_guard{mutex_};
+  auto lock = std::lock_guard<std::mutex>{mutex_};
   packets_.push_back(entry);
   if (packets_.size() > MAX_PACKETS)
     packets_.pop_front();
@@ -55,7 +55,7 @@ void data_store::add_packet(const packet_entry &entry) {
 }
 
 std::vector<endpoint_stats> data_store::get_endpoints() const {
-  auto lock = std::lock_guard{mutex_};
+  auto lock = std::lock_guard<std::mutex>{mutex_};
   auto result = std::vector<endpoint_stats>{};
   result.reserve(endpoints_.size());
 
@@ -71,7 +71,7 @@ std::vector<endpoint_stats> data_store::get_endpoints() const {
 }
 
 std::vector<packet_entry> data_store::get_recent_packets(size_t count) const {
-  auto lock = std::lock_guard{mutex_};
+  auto lock = std::lock_guard<std::mutex>{mutex_};
   auto result = std::vector<packet_entry>{};
 
   auto start = packets_.size() > count ? packets_.size() - count : 0;
@@ -82,7 +82,7 @@ std::vector<packet_entry> data_store::get_recent_packets(size_t count) const {
 }
 
 size_t data_store::get_total_packets() const {
-  auto lock = std::lock_guard{mutex_};
+  auto lock = std::lock_guard<std::mutex>{mutex_};
   return total_packets_;
 }
 
@@ -155,8 +155,8 @@ void renderer::render_loop() {
     endpoint_elements.push_back(separator());
 
     // Column headers
-    auto header = std::format("{:21} {:8} {:17} {:20} {:30} {:5}",
-                              "IP:Port", "Protocol", "MAC", "Vendor", "Hostname", "Pkts");
+    auto header = std::string{std::format("{:21} {:8} {:17} {:20} {:30} {:5}",
+                                          "IP:Port", "Protocol", "MAC", "Vendor", "Hostname", "Pkts")};
     endpoint_elements.push_back(text(header) | bold | color(Color::White));
     endpoint_elements.push_back(separator());
 
@@ -178,7 +178,7 @@ void renderer::render_loop() {
 
     // Build packet list (right pane)
     auto packet_elements = std::vector<Element>{};
-    auto status_text = paused_ ? "PAUSED" : std::format("Total: {}", total);
+    auto status_text = std::string{paused_ ? "PAUSED" : std::format("Total: {}", total)};
     packet_elements.push_back(text(std::format("Live Packets ({})", status_text)) |
                               bold | color(paused_ ? Color::Red : Color::Cyan));
     packet_elements.push_back(separator());
