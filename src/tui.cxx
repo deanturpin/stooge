@@ -5,6 +5,7 @@
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
+#include <iostream>
 #include <thread>
 
 namespace tui {
@@ -103,6 +104,11 @@ void renderer::stop() {
     return;
 
   running_ = false;
+
+  // Exit the screen loop if it's still active
+  if (screen_)
+    screen_->Exit();
+
   if (render_thread_ && render_thread_->joinable())
     render_thread_->join();
 }
@@ -113,6 +119,7 @@ void renderer::render_loop() {
   using namespace ftxui;
 
   auto screen = ScreenInteractive::Fullscreen();
+  screen_ = &screen; // Store screen pointer for cleanup
 
   // Component that renders the UI
   auto component = Renderer([&] {
@@ -255,6 +262,10 @@ void renderer::render_loop() {
 
   screen.Loop(component_with_shortcuts);
   refresh_thread.join();
+
+  // Explicitly reset terminal to clean up any leftover escape codes
+  screen_ = nullptr;
+  std::cout << "\033[0m\033[?25h" << std::flush; // Reset attributes and show cursor
 }
 
 } // namespace tui

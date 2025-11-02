@@ -9,6 +9,10 @@
 #include <string>
 #include <thread>
 
+namespace ftxui {
+class ScreenInteractive;
+}
+
 namespace tui {
 
 // Endpoint information with packet statistics
@@ -86,6 +90,7 @@ private:
   bool paused_ = false;
   bool show_help_ = false;
   std::unique_ptr<std::thread> render_thread_;
+  ftxui::ScreenInteractive *screen_ = nullptr; // Pointer to FTXUI screen for cleanup
 
   void render_loop();
 };
