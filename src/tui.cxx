@@ -1,0 +1,191 @@
+// Terminal UI implementation
+#include "tui.hxx"
+#include <algorithm>
+#include <format>
+#include <ftxui/component/component.hpp>
+#include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/dom/elements.hpp>
+#include <thread>
+
+namespace tui {
+
+std::string endpoint_stats::to_string() const {
+  auto port_str = port > 0 ? std::format(":{}", port) : "";
+  auto host_str =
+      !hostname.empty() && hostname != ip ? std::format(" ({})", hostname) : "";
+  return std::format("{}{} [{}]{} - {} pkts", ip, port_str, protocol, host_str,
+                     packet_count);
+}
+
+// data_store implementation
+void data_store::add_endpoint(const std::string &ip, uint16_t port,
+                               const std::string &protocol,
+                               const std::string &hostname) {
+  auto lock = std::lock_guard{mutex_};
+  auto key = std::format("{}:{}:{}", ip, port, protocol);
+
+  auto &ep = endpoints_[key];
+  ep.ip = ip;
+  ep.port = port;
+  ep.protocol = protocol;
+  if (!hostname.empty())
+    ep.hostname = hostname;
+  ep.packet_count++;
+  ep.last_seen = std::chrono::steady_clock::now();
+}
+
+void data_store::add_packet(const packet_entry &entry) {
+  auto lock = std::lock_guard{mutex_};
+  packets_.push_back(entry);
+  if (packets_.size() > MAX_PACKETS)
+    packets_.pop_front();
+  total_packets_++;
+}
+
+std::vector<endpoint_stats> data_store::get_endpoints() const {
+  auto lock = std::lock_guard{mutex_};
+  auto result = std::vector<endpoint_stats>{};
+  result.reserve(endpoints_.size());
+
+  for (const auto &[key, ep] : endpoints_)
+    result.push_back(ep);
+
+  // Sort by packet count (descending)
+  std::sort(result.begin(), result.end(), [](const auto &a, const auto &b) {
+    return a.packet_count > b.packet_count;
+  });
+
+  return result;
+}
+
+std::vector<packet_entry> data_store::get_recent_packets(size_t count) const {
+  auto lock = std::lock_guard{mutex_};
+  auto result = std::vector<packet_entry>{};
+
+  auto start = packets_.size() > count ? packets_.size() - count : 0;
+  for (size_t i = start; i < packets_.size(); i++)
+    result.push_back(packets_[i]);
+
+  return result;
+}
+
+size_t data_store::get_total_packets() const {
+  auto lock = std::lock_guard{mutex_};
+  return total_packets_;
+}
+
+// renderer implementation
+renderer::renderer(std::shared_ptr<data_store> store) : store_(store) {}
+
+renderer::~renderer() { stop(); }
+
+void renderer::start() {
+  if (running_)
+    return;
+
+  running_ = true;
+  render_thread_ = std::make_unique<std::thread>([this] { render_loop(); });
+}
+
+void renderer::stop() {
+  if (!running_)
+    return;
+
+  running_ = false;
+  if (render_thread_ && render_thread_->joinable())
+    render_thread_->join();
+}
+
+bool renderer::is_running() const { return running_; }
+
+void renderer::render_loop() {
+  using namespace ftxui;
+
+  auto screen = ScreenInteractive::Fullscreen();
+
+  // Component that renders the UI
+  auto component = Renderer([&] {
+    // Get current data
+    auto endpoints = store_->get_endpoints();
+    auto packets = store_->get_recent_packets(50);
+    auto total = store_->get_total_packets();
+
+    // Build endpoint list (left pane)
+    auto endpoint_elements = std::vector<Element>{};
+    endpoint_elements.push_back(text("Endpoints") | bold | color(Color::Cyan));
+    endpoint_elements.push_back(separator());
+
+    for (const auto &ep : endpoints) {
+      auto ep_text = text(ep.to_string());
+      // Colourize by protocol
+      if (ep.protocol == "TCP")
+        ep_text = ep_text | color(Color::Green);
+      else if (ep.protocol == "UDP")
+        ep_text = ep_text | color(Color::Yellow);
+      else
+        ep_text = ep_text | color(Color::White);
+
+      endpoint_elements.push_back(ep_text);
+    }
+
+    auto endpoint_pane =
+        vbox(endpoint_elements) | frame | size(WIDTH, EQUAL, 40);
+
+    // Build packet list (right pane)
+    auto packet_elements = std::vector<Element>{};
+    packet_elements.push_back(
+        text(std::format("Live Packets (Total: {})", total)) | bold |
+        color(Color::Cyan));
+    packet_elements.push_back(separator());
+
+    for (const auto &pkt : packets) {
+      auto pkt_line = text(std::format("[{:6d}] {} {} → {} ({} bytes)",
+                                       pkt.number, pkt.protocol, pkt.src,
+                                       pkt.dst, pkt.bytes));
+
+      // Colourize by protocol
+      if (pkt.protocol == "TCP")
+        pkt_line = pkt_line | color(Color::Green);
+      else if (pkt.protocol == "UDP")
+        pkt_line = pkt_line | color(Color::Yellow);
+      else
+        pkt_line = pkt_line | color(Color::White);
+
+      packet_elements.push_back(pkt_line);
+
+      // Add dissection info if present
+      if (!pkt.dissection.empty()) {
+        packet_elements.push_back(text("  └─ " + pkt.dissection) |
+                                  color(Color::Magenta));
+      }
+    }
+
+    auto packet_pane = vbox(packet_elements) | frame | flex;
+
+    // Combine panes horizontally
+    return hbox({endpoint_pane, separator(), packet_pane}) | border;
+  });
+
+  // Capture component to handle exit
+  auto component_with_quit = CatchEvent(component, [&](Event event) {
+    if (event == Event::Character('q') || event == Event::Escape) {
+      running_ = false;
+      screen.Exit();
+      return true;
+    }
+    return false;
+  });
+
+  // Refresh periodically
+  std::thread refresh_thread([&]() {
+    while (running_) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      screen.PostEvent(Event::Custom);
+    }
+  });
+
+  screen.Loop(component_with_quit);
+  refresh_thread.join();
+}
+
+} // namespace tui

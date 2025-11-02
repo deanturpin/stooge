@@ -2,11 +2,13 @@
 // resolution
 #include "dissector.hxx"
 #include "dns.hxx"
+#include "tui.hxx"
 #include <arpa/inet.h>
 #include <array>
 #include <chrono>
 #include <csignal>
 #include <map>
+#include <memory>
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -24,9 +26,14 @@ constexpr auto SPEEDUP_FACTOR = 4.0;
 
 // Global flag for signal handling
 static volatile sig_atomic_t stop_capture = 0;
+static tui::renderer *global_renderer = nullptr;
 
 // Signal handler for graceful shutdown
-static void signal_handler(int signum) { stop_capture = 1; }
+static void signal_handler(int signum) {
+  stop_capture = 1;
+  if (global_renderer)
+    global_renderer->stop();
+}
 
 // Compile-time validation
 static_assert(SPEEDUP_FACTOR > 0.0, "Speedup factor must be positive");
@@ -283,15 +290,18 @@ int main(int argc, char *argv[]) {
   std::print("Data link type: {} ({})\n\n", pcap_datalink_val_to_name(datalink),
              pcap_datalink_val_to_description(datalink));
 
+  // Initialise TUI
+  auto tui_store = std::make_shared<tui::data_store>();
+  auto tui_renderer = tui::renderer{tui_store};
+  global_renderer = &tui_renderer;
+  tui_renderer.start();
+
   // Packet iteration state
   auto header = static_cast<struct pcap_pkthdr *>(nullptr);
   auto packet = static_cast<const u_char *>(nullptr);
   auto packet_count = 0;
   auto start_time = std::optional<std::chrono::steady_clock::time_point>{};
   auto first_packet_time = std::optional<struct timeval>{};
-
-  if (!live_mode)
-    std::print("Beginning replay...\n\n");
 
   // Process packets
   while (!stop_capture && pcap_next_ex(handle, &header, &packet) == 1) {
@@ -327,11 +337,39 @@ int main(int argc, char *argv[]) {
     // Parse and display packet information
     auto info = parse_packet(packet, header);
     if (info) {
-      if (live_mode)
-        std::print("[{:6d}] {}\n", packet_count, info->describe());
-      else
-        std::print("[{:6d}] {:8.3f}s: {}\n", packet_count, packet_offset,
-                   info->describe());
+      // Add endpoint information to TUI
+      auto src_host = dns::reverse_lookup(info->src_ip);
+      auto dst_host = dns::reverse_lookup(info->dst_ip);
+      tui_store->add_endpoint(info->src_ip, info->src_port, info->protocol,
+                              src_host);
+      tui_store->add_endpoint(info->dst_ip, info->dst_port, info->protocol,
+                              dst_host);
+
+      // Build packet entry for TUI
+      auto format_endpoint = [](const std::string &ip, uint16_t port,
+                                const std::string &host) {
+        if (port == 0)
+          return host.empty() || host == ip
+                     ? ip
+                     : std::format("{} ({})", ip, host);
+
+        auto service = port_to_service(port);
+        auto port_display = service.empty()
+                                ? std::format("{}", port)
+                                : std::format("{}/{}", port, service);
+
+        if (!host.empty() && host != ip)
+          return std::format("{}:{} ({})", ip, port_display, host);
+        return std::format("{}:{}", ip, port_display);
+      };
+
+      auto pkt = tui::packet_entry{};
+      pkt.number = packet_count;
+      pkt.timestamp = packet_offset;
+      pkt.protocol = info->protocol;
+      pkt.src = format_endpoint(info->src_ip, info->src_port, src_host);
+      pkt.dst = format_endpoint(info->dst_ip, info->dst_port, dst_host);
+      pkt.bytes = info->length;
 
       // Try to dissect application-layer protocol
       if (info->payload && info->payload_length > 0) {
@@ -339,11 +377,17 @@ int main(int argc, char *argv[]) {
             dissectors.dissect(info->payload, info->payload_length,
                                info->src_port, info->dst_port, info->protocol);
         if (dissected)
-          std::print("         └─ {} {}\n", dissected->protocol,
-                     dissected->info);
+          pkt.dissection =
+              std::format("{} {}", dissected->protocol, dissected->info);
       }
+
+      tui_store->add_packet(pkt);
     }
   }
+
+  // Stop TUI renderer
+  tui_renderer.stop();
+  global_renderer = nullptr;
 
   if (live_mode)
     std::print("\n\nCapture complete!\n");

@@ -13,7 +13,17 @@ RUN apt-get update && apt-get install -y \
     libpcap-dev \
     liblua5.4-dev \
     pkg-config \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# Install FTXUI for terminal UI
+RUN git clone https://github.com/ArthurSonzogni/FTXUI.git /tmp/ftxui \
+    && cd /tmp/ftxui \
+    && mkdir build && cd build \
+    && cmake .. -DCMAKE_CXX_COMPILER=g++-14 \
+    && make -j$(nproc) \
+    && make install \
+    && rm -rf /tmp/ftxui
 
 # Set g++-14 as default compiler
 RUN update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100 \
