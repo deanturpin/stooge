@@ -158,8 +158,7 @@ void renderer::render_loop() {
     }
 
     auto endpoint_pane =
-        vbox(endpoint_elements) | vscroll_indicator | frame |
-        size(WIDTH, EQUAL, 40);
+        vbox(endpoint_elements) | vscroll_indicator | frame | flex;
 
     // Build packet list (right pane)
     auto packet_elements = std::vector<Element>{};
