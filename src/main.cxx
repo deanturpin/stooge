@@ -294,9 +294,29 @@ int main(int argc, char *argv[]) {
   auto errbuf = std::array<char, PCAP_ERRBUF_SIZE>{};
   pcap_t *handle = nullptr;
   auto live_mode = false;
+  auto use_tui = true; // Enable TUI by default
+
+  // Parse command-line arguments
+  auto pcap_file = std::string{};
+  for (auto i = 1; i < argc; ++i) {
+    auto arg = std::string{argv[i]};
+    if (arg == "--no-tui" || arg == "-n")
+      use_tui = false;
+    else if (arg == "--help" || arg == "-h") {
+      std::print("Usage:\n");
+      std::print("  {}              # Live capture mode\n", argv[0]);
+      std::print("  {} <pcap-file>  # Replay mode\n", argv[0]);
+      std::print("\nOptions:\n");
+      std::print("  --no-tui, -n    Disable TUI (for non-interactive "
+                 "environments)\n");
+      std::print("  --help, -h      Show this help message\n");
+      return 0;
+    } else if (pcap_file.empty())
+      pcap_file = arg;
+  }
 
   // Determine mode: live capture or file replay
-  if (argc == 1) {
+  if (pcap_file.empty()) {
     // Live mode - capture from default interface
     live_mode = true;
 
@@ -355,22 +375,19 @@ int main(int argc, char *argv[]) {
     std::print("Live capture on {} ({} interfaces available)\n", dev_name,
                interface_count);
     std::print("Press Ctrl+C to stop\n\n");
-  } else if (argc == 2) {
+  } else {
     // Replay mode - read from file
-    auto filename = argv[1];
-    handle = pcap_open_offline(filename, errbuf.data());
+    handle = pcap_open_offline(pcap_file.c_str(), errbuf.data());
     if (!handle) {
-      std::print("Error opening file {}: {}\n", filename, errbuf.data());
+      std::print("Error opening file {}: {}\n", pcap_file, errbuf.data());
       return 1;
     }
 
-    std::print("Successfully opened PCAP file: {}\n", filename);
-    std::print("Replay speed: {}x\n\n", SPEEDUP_FACTOR);
-  } else {
-    std::print("Usage:\n");
-    std::print("  {}              # Live capture mode\n", argv[0]);
-    std::print("  {} <pcap-file>  # Replay mode\n", argv[0]);
-    return 1;
+    std::print("Successfully opened PCAP file: {}\n", pcap_file);
+    std::print("Replay speed: {}x\n", SPEEDUP_FACTOR);
+    if (!use_tui)
+      std::print("TUI disabled (text mode)\n");
+    std::print("\n");
   }
 
   // Initialise dissector runtime
@@ -380,22 +397,27 @@ int main(int argc, char *argv[]) {
 
   // Initialise TUI data store (but don't start renderer yet)
   auto tui_store = std::make_shared<tui::data_store>();
-  auto tui_renderer = tui::renderer{tui_store};
-  global_renderer = &tui_renderer;
+  std::unique_ptr<tui::renderer> tui_renderer;
 
-  // Start TUI renderer - this will take over the screen
-  // Wrap in try-catch to handle terminal/TTY errors gracefully
-  try {
-    tui_renderer.start();
-  } catch (const std::exception &e) {
-    std::print("Error starting TUI: {}\n", e.what());
-    std::print("\nTUI requires a proper terminal. If running in Docker:\n");
-    std::print("  - Ensure you use 'docker run -it' (interactive + TTY)\n");
-    std::print("  - For live capture, add '--network=host "
-               "--cap-add=NET_RAW'\n");
-    std::print("  - Consider using file replay mode instead\n");
-    pcap_close(handle);
-    return 1;
+  if (use_tui) {
+    tui_renderer = std::make_unique<tui::renderer>(tui_store);
+    global_renderer = tui_renderer.get();
+
+    // Start TUI renderer - this will take over the screen
+    // Wrap in try-catch to handle terminal/TTY errors gracefully
+    try {
+      tui_renderer->start();
+    } catch (const std::exception &e) {
+      std::print("Error starting TUI: {}\n", e.what());
+      std::print("\nTUI requires a proper terminal.\n");
+      std::print("Solutions:\n");
+      std::print("  - Run with 'docker run -it' (interactive + TTY)\n");
+      std::print("  - Use --no-tui flag for non-interactive environments\n");
+      std::print("    Example: {} --no-tui {}\n", argv[0],
+                 pcap_file.empty() ? "<pcap-file>" : pcap_file);
+      pcap_close(handle);
+      return 1;
+    }
   }
 
   // Packet iteration state
@@ -472,7 +494,7 @@ int main(int argc, char *argv[]) {
       tui_store->add_endpoint(info->dst_ip, info->dst_port, info->protocol,
                               dst_host, dst_vendor, dst_mac_str);
 
-      // Build packet entry for TUI
+      // Build packet entry
       auto format_endpoint = [](const std::string &ip, uint16_t port,
                                 const std::string &host) {
         if (port == 0)
@@ -509,15 +531,26 @@ int main(int argc, char *argv[]) {
       }
 
       tui_store->add_packet(pkt);
+
+      // Print text output if TUI is disabled
+      if (!use_tui) {
+        std::print("[{}] {} {} → {} ({} bytes)", pkt.number, pkt.protocol,
+                   pkt.src, pkt.dst, pkt.bytes);
+        if (!pkt.dissection.empty())
+          std::print(" | {}", pkt.dissection);
+        std::print("\n");
+      }
     }
   }
 
   // Stop TUI renderer gracefully
-  try {
-    tui_renderer.stop();
-  } catch (const std::exception &e) {
-    // TUI cleanup failed, but continue shutdown
-    std::print("Warning: TUI cleanup error: {}\n", e.what());
+  if (use_tui && tui_renderer) {
+    try {
+      tui_renderer->stop();
+    } catch (const std::exception &e) {
+      // TUI cleanup failed, but continue shutdown
+      std::print("Warning: TUI cleanup error: {}\n", e.what());
+    }
   }
   global_renderer = nullptr;
 
