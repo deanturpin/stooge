@@ -253,15 +253,23 @@ void renderer::render_loop() {
 
   // Refresh periodically (only when not paused)
   std::thread refresh_thread([&]() {
-    while (running_) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      if (!paused_)
-        screen.PostEvent(Event::Custom);
+    try {
+      while (running_) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (running_ && !paused_)
+          screen.PostEvent(Event::Custom);
+      }
+    } catch (...) {
+      // Suppress exceptions during shutdown to avoid terminate()
     }
   });
 
   screen.Loop(component_with_shortcuts);
-  refresh_thread.join();
+
+  // Ensure refresh thread stops before cleanup
+  running_ = false;
+  if (refresh_thread.joinable())
+    refresh_thread.join();
 
   // Explicitly reset terminal to clean up any leftover escape codes
   screen_ = nullptr;

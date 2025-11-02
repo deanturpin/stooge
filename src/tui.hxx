@@ -1,6 +1,7 @@
 // Terminal UI for displaying packet capture in split-screen layout
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <deque>
 #include <map>
@@ -86,7 +87,7 @@ public:
 
 private:
   std::shared_ptr<data_store> store_;
-  bool running_ = false;
+  std::atomic<bool> running_{false};
   bool paused_ = false;
   bool show_help_ = false;
   std::unique_ptr<std::thread> render_thread_;
