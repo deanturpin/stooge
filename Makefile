@@ -38,7 +38,7 @@ clean:
 	docker rmi $(IMAGE) 2>/dev/null || true
 
 # Kill all running stooge containers
-kill-all:
+kill:
 	@echo "Killing all running stooge containers..."
 	@docker ps -q --filter ancestor=$(IMAGE) | xargs -r docker kill 2>/dev/null || true
 	@docker ps -aq --filter ancestor=$(IMAGE) | xargs -r docker rm 2>/dev/null || true
