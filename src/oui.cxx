@@ -22,7 +22,7 @@ void load_database() {
 
   auto file = std::ifstream{"/usr/share/oui.txt"};
   if (!file.is_open()) {
-    std::print("Warning: Could not open OUI database\n");
+    // Database file not found (don't print - TUI might be active)
     loaded = true;
     return;
   }
@@ -48,6 +48,13 @@ void load_database() {
 
     if (vendor_start < line.length()) {
       auto vendor = line.substr(vendor_start);
+
+      // Strip trailing whitespace (including \r from Windows line endings)
+      while (!vendor.empty() &&
+             (vendor.back() == ' ' || vendor.back() == '\t' ||
+              vendor.back() == '\r' || vendor.back() == '\n'))
+        vendor.pop_back();
+
       // Convert OUI to uppercase and remove dashes
       auto oui_key = std::string{};
       for (auto c : oui) {
@@ -58,7 +65,7 @@ void load_database() {
     }
   }
 
-  std::print("Loaded {} OUI entries\n", oui_db.size());
+  // Database loaded successfully (don't print - TUI might be active)
   loaded = true;
 }
 } // anonymous namespace
