@@ -16,12 +16,23 @@ using namespace std::chrono_literals;
 namespace dns {
 
 namespace {
+// Thread pool configuration constants
+constexpr auto MAX_WORKERS = 10;
+constexpr auto MIN_WORKERS = 1;
+constexpr auto MAX_REASONABLE_WORKERS = 1000;
+
+// Compile-time validation for worker pool configuration
+static_assert(MAX_WORKERS >= MIN_WORKERS, "Must have at least one worker");
+static_assert(MAX_WORKERS <= MAX_REASONABLE_WORKERS,
+              "Worker count seems unreasonable");
+static_assert(MAX_WORKERS > 0, "Worker count must be positive");
+static_assert(MIN_WORKERS > 0, "Minimum worker count must be positive");
+
 // Shared cache with mutex for thread-safe access
 auto cache = std::map<std::string, std::string>{};
 auto cache_mutex = std::mutex{};
 
 // Thread pool for DNS resolution
-constexpr auto MAX_WORKERS = 10;
 auto workers = std::vector<std::thread>{};
 auto work_queue = std::queue<std::string>{};
 auto queue_mutex = std::mutex{};

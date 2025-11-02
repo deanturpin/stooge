@@ -41,7 +41,52 @@ static void signal_handler(int signum) {
 static_assert(SPEEDUP_FACTOR > 0.0, "Speedup factor must be positive");
 static_assert(SPEEDUP_FACTOR <= 1000.0,
               "Speedup factor seems unreasonably high");
+static_assert(SPEEDUP_FACTOR >= 0.1, "Speedup factor too slow (< 0.1x)");
+static_assert(SPEEDUP_FACTOR <= 100.0, "Speedup factor too fast (> 100x)");
 static_assert(sizeof(uint16_t) == 2, "Port numbers must be 16-bit");
+static_assert(sizeof(uint8_t) == 1, "Byte must be 8 bits");
+static_assert(INET_ADDRSTRLEN >= 16,
+              "IPv4 string buffer must fit xxx.xxx.xxx.xxx");
+
+namespace {
+// Constexpr protocol validation helpers
+constexpr bool is_tcp_protocol(int protocol) { return protocol == IPPROTO_TCP; }
+
+constexpr bool is_udp_protocol(int protocol) { return protocol == IPPROTO_UDP; }
+
+constexpr bool is_known_ip_protocol(int protocol) {
+  return protocol == IPPROTO_TCP || protocol == IPPROTO_UDP ||
+         protocol == IPPROTO_ICMP;
+}
+
+// Constexpr port validation helpers
+constexpr bool is_valid_port(uint16_t port) {
+  return port > 0; // Port 0 is reserved
+}
+
+constexpr bool is_well_known_port(uint16_t port) {
+  return port > 0 && port < 1024;
+}
+
+constexpr bool is_ephemeral_port(uint16_t port) {
+  return port >= 49152 && port <= 65535;
+}
+
+// Compile-time unit tests for protocol and port helpers
+static_assert(is_tcp_protocol(IPPROTO_TCP), "TCP protocol check failed");
+static_assert(is_udp_protocol(IPPROTO_UDP), "UDP protocol check failed");
+static_assert(!is_tcp_protocol(IPPROTO_UDP), "TCP should not match UDP");
+static_assert(is_known_ip_protocol(IPPROTO_TCP), "TCP is known protocol");
+static_assert(is_known_ip_protocol(IPPROTO_UDP), "UDP is known protocol");
+
+static_assert(is_well_known_port(80), "HTTP is well-known port");
+static_assert(is_well_known_port(443), "HTTPS is well-known port");
+static_assert(!is_well_known_port(8080), "8080 is not well-known");
+static_assert(is_ephemeral_port(50000), "50000 is ephemeral");
+static_assert(!is_ephemeral_port(80), "80 is not ephemeral");
+static_assert(is_valid_port(80), "80 is valid port");
+static_assert(!is_valid_port(0), "0 is not valid port");
+} // namespace
 
 // Map common port numbers to protocol/service names
 std::string port_to_service(uint16_t port) {
@@ -201,7 +246,7 @@ struct endpoint {
   }
 
   // Lexicographic ordering for std::set
-  bool operator<(const endpoint &other) const {
+  constexpr bool operator<(const endpoint &other) const {
     if (ip != other.ip)
       return ip < other.ip;
     if (port != other.port)
@@ -209,6 +254,34 @@ struct endpoint {
     return protocol < other.protocol;
   }
 };
+
+// Compile-time unit tests for endpoint comparison
+namespace {
+constexpr auto test_endpoint_ordering_by_ip() {
+  auto ep1 = endpoint{"192.168.1.1", 80, "TCP", ""};
+  auto ep2 = endpoint{"192.168.1.2", 80, "TCP", ""};
+  return ep1 < ep2; // Should be true (IP comparison)
+}
+
+constexpr auto test_endpoint_ordering_by_port() {
+  auto ep1 = endpoint{"192.168.1.1", 80, "TCP", ""};
+  auto ep2 = endpoint{"192.168.1.1", 443, "TCP", ""};
+  return ep1 < ep2; // Should be true (port comparison)
+}
+
+constexpr auto test_endpoint_ordering_by_protocol() {
+  auto ep1 = endpoint{"192.168.1.1", 80, "TCP", ""};
+  auto ep2 = endpoint{"192.168.1.1", 80, "UDP", ""};
+  return ep1 < ep2; // Should be true ("TCP" < "UDP")
+}
+
+static_assert(test_endpoint_ordering_by_ip(),
+              "Endpoint ordering by IP should work");
+static_assert(test_endpoint_ordering_by_port(),
+              "Endpoint ordering by port should work");
+static_assert(test_endpoint_ordering_by_protocol(),
+              "Endpoint ordering by protocol should work");
+} // namespace
 
 int main(int argc, char *argv[]) {
   // Disable stdout buffering for real-time output in Docker
