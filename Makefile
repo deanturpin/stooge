@@ -1,7 +1,7 @@
 # Makefile for stooge - network traffic replayer
 # All builds run in Docker containers to ensure consistent environment
 
-.PHONY: all build run live test clean deploy format install
+.PHONY: all build run live test clean deploy format install kill-all
 
 IMAGE := deanturpin/stooge
 
@@ -36,6 +36,13 @@ test:
 # Remove Docker image
 clean:
 	docker rmi $(IMAGE) 2>/dev/null || true
+
+# Kill all running stooge containers
+kill-all:
+	@echo "Killing all running stooge containers..."
+	@docker ps -q --filter ancestor=$(IMAGE) | xargs -r docker kill 2>/dev/null || true
+	@docker ps -aq --filter ancestor=$(IMAGE) | xargs -r docker rm 2>/dev/null || true
+	@echo "Done."
 
 # Install Lua dissectors to Wireshark user plugins directory
 install:
