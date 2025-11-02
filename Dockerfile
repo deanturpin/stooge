@@ -25,6 +25,13 @@ RUN git clone https://github.com/ArthurSonzogni/FTXUI.git /tmp/ftxui \
     && make install \
     && rm -rf /tmp/ftxui
 
+# Download IEEE OUI database for MAC vendor lookup
+RUN apt-get update && apt-get install -y wget \
+    && wget -q https://standards-oui.ieee.org/oui/oui.txt -O /usr/share/oui.txt \
+    && apt-get remove -y wget \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
 # Set g++-14 as default compiler
 RUN update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100 \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100
