@@ -14,15 +14,17 @@ std::string endpoint_stats::to_string() const {
   auto host_str =
       !hostname.empty() && hostname != ip ? std::format(" ({})", hostname) : "";
   auto vendor_str = !vendor.empty() ? std::format(" [{}]", vendor) : "";
-  return std::format("{}{} [{}]{}{} - {} pkts", ip, port_str, protocol,
-                     host_str, vendor_str, packet_count);
+  auto mac_str = !mac_address.empty() ? std::format(" MAC:{}", mac_address) : "";
+  return std::format("{}{} [{}]{}{}{} - {} pkts", ip, port_str, protocol,
+                     host_str, vendor_str, mac_str, packet_count);
 }
 
 // data_store implementation
 void data_store::add_endpoint(const std::string &ip, uint16_t port,
                                const std::string &protocol,
                                const std::string &hostname,
-                               const std::string &vendor) {
+                               const std::string &vendor,
+                               const std::string &mac_address) {
   auto lock = std::lock_guard{mutex_};
   auto key = std::format("{}:{}:{}", ip, port, protocol);
 
@@ -34,6 +36,8 @@ void data_store::add_endpoint(const std::string &ip, uint16_t port,
     ep.hostname = hostname;
   if (!vendor.empty())
     ep.vendor = vendor;
+  if (!mac_address.empty())
+    ep.mac_address = mac_address;
   ep.packet_count++;
   ep.last_seen = std::chrono::steady_clock::now();
 }

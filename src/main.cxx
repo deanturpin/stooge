@@ -348,10 +348,21 @@ int main(int argc, char *argv[]) {
       auto dst_host = dns::reverse_lookup(info->dst_ip);
       auto src_vendor = oui::lookup_vendor(info->src_mac);
       auto dst_vendor = oui::lookup_vendor(info->dst_mac);
+
+      // Format MAC addresses
+      auto src_mac_str = std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                                     info->src_mac[0], info->src_mac[1],
+                                     info->src_mac[2], info->src_mac[3],
+                                     info->src_mac[4], info->src_mac[5]);
+      auto dst_mac_str = std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                                     info->dst_mac[0], info->dst_mac[1],
+                                     info->dst_mac[2], info->dst_mac[3],
+                                     info->dst_mac[4], info->dst_mac[5]);
+
       tui_store->add_endpoint(info->src_ip, info->src_port, info->protocol,
-                              src_host, src_vendor);
+                              src_host, src_vendor, src_mac_str);
       tui_store->add_endpoint(info->dst_ip, info->dst_port, info->protocol,
-                              dst_host, dst_vendor);
+                              dst_host, dst_vendor, dst_mac_str);
 
       // Build packet entry for TUI
       auto format_endpoint = [](const std::string &ip, uint16_t port,

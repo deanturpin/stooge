@@ -16,8 +16,9 @@ struct endpoint_stats {
   std::string ip;
   uint16_t port;
   std::string protocol;
-  std::string hostname; // Cached DNS lookup
-  std::string vendor;   // MAC vendor
+  std::string hostname;      // Cached DNS lookup
+  std::string vendor;        // MAC vendor
+  std::string mac_address;   // MAC address (formatted as XX:XX:XX:XX:XX:XX)
   size_t packet_count = 0;
   std::chrono::steady_clock::time_point last_seen;
 
@@ -41,7 +42,8 @@ public:
   // Add or update endpoint statistics
   void add_endpoint(const std::string &ip, uint16_t port,
                     const std::string &protocol, const std::string &hostname,
-                    const std::string &vendor = "");
+                    const std::string &vendor = "",
+                    const std::string &mac_address = "");
 
   // Add packet entry to scrolling feed
   void add_packet(const packet_entry &entry);
