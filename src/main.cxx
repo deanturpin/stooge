@@ -327,23 +327,34 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
+    // List available interfaces for debugging
+    auto interface_count = 0;
+    for (auto d = alldevs; d != nullptr; d = d->next)
+      interface_count++;
+
     // Open live capture
     handle = pcap_open_live(dev_name.c_str(), 65535, 1, 1000, errbuf.data());
     pcap_freealldevs(alldevs);
 
     if (!handle) {
       std::print("Error opening interface {}: {}\n", dev_name, errbuf.data());
-      std::print("\nLive capture requires elevated privileges.\n");
-      std::print("Try one of:\n");
-      std::print("  1. Run with sudo: sudo {} {}\n", argv[0],
-                 argc > 1 ? argv[1] : "");
-      std::print("  2. Grant capabilities: sudo setcap "
-                 "cap_net_raw,cap_net_admin=eip {}\n",
+      std::print("\nLive capture failed. Possible causes:\n");
+      std::print("  1. Insufficient privileges (need root/sudo)\n");
+      std::print("  2. Running in Docker without host network access\n");
+      std::print("  3. Interface not available in current network namespace\n");
+      std::print("\nSolutions:\n");
+      std::print("  - Native: sudo {} (requires elevated privileges)\n",
                  argv[0]);
+      std::print("  - Docker: docker run --network=host --cap-add=NET_RAW -it "
+                 "deanturpin/stooge\n");
+      std::print("  - Recommended: Use file replay mode with a PCAP file\n");
+      std::print("    Example: {} samples/traffic.pcapng\n", argv[0]);
       return 1;
     }
 
-    std::print("Live capture on {} (press Ctrl+C to stop)\n\n", dev_name);
+    std::print("Live capture on {} ({} interfaces available)\n", dev_name,
+               interface_count);
+    std::print("Press Ctrl+C to stop\n\n");
   } else if (argc == 2) {
     // Replay mode - read from file
     auto filename = argv[1];
@@ -373,7 +384,19 @@ int main(int argc, char *argv[]) {
   global_renderer = &tui_renderer;
 
   // Start TUI renderer - this will take over the screen
-  tui_renderer.start();
+  // Wrap in try-catch to handle terminal/TTY errors gracefully
+  try {
+    tui_renderer.start();
+  } catch (const std::exception &e) {
+    std::print("Error starting TUI: {}\n", e.what());
+    std::print("\nTUI requires a proper terminal. If running in Docker:\n");
+    std::print("  - Ensure you use 'docker run -it' (interactive + TTY)\n");
+    std::print("  - For live capture, add '--network=host "
+               "--cap-add=NET_RAW'\n");
+    std::print("  - Consider using file replay mode instead\n");
+    pcap_close(handle);
+    return 1;
+  }
 
   // Packet iteration state
   auto header = static_cast<struct pcap_pkthdr *>(nullptr);
@@ -382,8 +405,20 @@ int main(int argc, char *argv[]) {
   auto start_time = std::optional<std::chrono::steady_clock::time_point>{};
   auto first_packet_time = std::optional<struct timeval>{};
 
-  // Process packets
-  while (!stop_capture && pcap_next_ex(handle, &header, &packet) == 1) {
+  // Process packets with error handling
+  auto capture_result = 0;
+  while (!stop_capture &&
+         (capture_result = pcap_next_ex(handle, &header, &packet)) >= 0) {
+    // Handle pcap_next_ex return values:
+    // 1 = packet read successfully
+    // 0 = timeout elapsed (live capture)
+    // -1 = error
+    // -2 = end of file (savefile)
+    if (capture_result == 0)
+      continue; // Timeout, try again
+
+    if (capture_result == -2)
+      break; // End of file (normal for replay mode)
     packet_count++;
 
     auto packet_offset = 0.0;
@@ -477,21 +512,40 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // Stop TUI renderer
-  tui_renderer.stop();
+  // Stop TUI renderer gracefully
+  try {
+    tui_renderer.stop();
+  } catch (const std::exception &e) {
+    // TUI cleanup failed, but continue shutdown
+    std::print("Warning: TUI cleanup error: {}\n", e.what());
+  }
   global_renderer = nullptr;
 
-  if (live_mode)
-    std::print("\n\nCapture complete!\n");
-  else
-    std::print("\n\nReplay complete!\n");
-  std::print("Total packets: {}\n", packet_count);
+  // Check if capture ended due to error
+  if (capture_result == -1) {
+    std::print("\n\nCapture error: {}\n", pcap_geterr(handle));
+    std::print("This can happen when:\n");
+    std::print("  - Network interface goes down\n");
+    std::print("  - Running in restricted Docker environment\n");
+    std::print("  - Insufficient permissions during capture\n");
+  } else if (stop_capture) {
+    std::print("\n\nCapture stopped by user (Ctrl+C)\n");
+  } else {
+    if (live_mode)
+      std::print("\n\nCapture complete!\n");
+    else
+      std::print("\n\nReplay complete!\n");
+  }
+
+  std::print("Total packets processed: {}\n", packet_count);
 
   // Wait for any remaining DNS lookups to complete
-  std::print("\nWaiting for DNS resolution to complete...\n");
-  dns::wait_for_resolution();
-  std::print("DNS resolution complete.\n");
+  if (packet_count > 0) {
+    std::print("\nWaiting for DNS resolution to complete...\n");
+    dns::wait_for_resolution();
+    std::print("DNS resolution complete.\n");
+  }
 
   pcap_close(handle);
-  return 0;
+  return capture_result == -1 ? 1 : 0;
 }
