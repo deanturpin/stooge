@@ -177,12 +177,12 @@ static int buffer_len(lua_State *L) {
 // Buffer slice uint() method
 static int buffer_uint(lua_State *L) {
   auto buf = static_cast<buffer_wrapper *>(lua_touserdata(L, 1));
-  if (buf->length == 1) {
+  if (buf->length == 1uz) {
     lua_pushinteger(L, buf->data[0]);
-  } else if (buf->length == 2) {
+  } else if (buf->length == 2uz) {
     uint16_t val = (buf->data[0] << 8) | buf->data[1]; // Big-endian
     lua_pushinteger(L, val);
-  } else if (buf->length == 4) {
+  } else if (buf->length == 4uz) {
     uint32_t val = (buf->data[0] << 24) | (buf->data[1] << 16) |
                    (buf->data[2] << 8) | buf->data[3];
     lua_pushinteger(L, val);
@@ -247,7 +247,7 @@ std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
   if (!L)
     return std::nullopt;
 
-  if (length == 0)
+  if (length == 0uz)
     return std::nullopt;
 
   // Try HTTP dissector for port 80, 8080, 443
