@@ -468,6 +468,13 @@ int main(int argc, char *argv[]) {
       // Live mode - initialise start time on first packet
       if (!start_time)
         start_time = std::chrono::steady_clock::now();
+
+      // Calculate elapsed time since first packet for live mode
+      auto now = std::chrono::steady_clock::now();
+      auto elapsed =
+          std::chrono::duration_cast<std::chrono::seconds>(now - *start_time)
+              .count();
+      packet_offset = static_cast<double>(elapsed);
     }
 
     // Update TUI clock with current timing
