@@ -464,7 +464,15 @@ int main(int argc, char *argv[]) {
 
       // Sleep until it's time to display this packet
       std::this_thread::sleep_until(target_time);
+    } else {
+      // Live mode - initialise start time on first packet
+      if (!start_time)
+        start_time = std::chrono::steady_clock::now();
     }
+
+    // Update TUI clock with current timing
+    if (start_time)
+      tui_store->set_capture_time(*start_time, packet_offset);
 
     // Parse and display packet information
     auto info = parse_packet(packet, header);

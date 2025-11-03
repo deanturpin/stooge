@@ -87,6 +87,37 @@ size_t data_store::get_total_packets() const {
   return total_packets_;
 }
 
+void data_store::set_capture_time(std::chrono::steady_clock::time_point start,
+                                  double current_seconds) {
+  auto lock = std::scoped_lock{mutex_};
+  capture_start_ = start;
+  current_packet_time_ = current_seconds;
+  is_live_capture_ = (current_seconds == 0.0); // Live if time is 0
+}
+
+std::string data_store::get_time_display() const {
+  auto lock = std::scoped_lock{mutex_};
+
+  if (is_live_capture_) {
+    // Show elapsed time since capture started
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed =
+        std::chrono::duration_cast<std::chrono::seconds>(now - capture_start_)
+            .count();
+    auto hours = elapsed / 3600;
+    auto minutes = (elapsed % 3600) / 60;
+    auto seconds = elapsed % 60;
+    return std::format("{:02d}:{:02d}:{:02d}", hours, minutes, seconds);
+  }
+
+  // Show PCAP packet time
+  auto total_seconds = static_cast<int>(current_packet_time_);
+  auto hours = total_seconds / 3600;
+  auto minutes = (total_seconds % 3600) / 60;
+  auto seconds = total_seconds % 60;
+  return std::format("{:02d}:{:02d}:{:02d}", hours, minutes, seconds);
+}
+
 // renderer implementation
 renderer::renderer(std::shared_ptr<data_store> store) : store_(store) {}
 
@@ -191,11 +222,12 @@ void renderer::render_loop() {
 
     // Build packet list (right pane)
     auto packet_elements = std::vector<Element>{};
+    auto time_display = store_->get_time_display();
     auto status_text =
         std::string{paused_ ? "PAUSED" : std::format("Total: {}", total)};
-    packet_elements.push_back(
-        text(std::format("Live Packets ({})", status_text)) | bold |
-        color(paused_ ? Color::Red : Color::Cyan));
+    packet_elements.push_back(text(std::format("Live Packets ({}) | Time: {}",
+                                               status_text, time_display)) |
+                              bold | color(paused_ ? Color::Red : Color::Cyan));
     packet_elements.push_back(separator());
 
     for (const auto &pkt : packets) {

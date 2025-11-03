@@ -62,12 +62,25 @@ public:
   // Get total packet count
   size_t get_total_packets() const;
 
+  // Set capture start time and current packet time
+  void set_capture_time(std::chrono::steady_clock::time_point start,
+                        double current_seconds);
+
+  // Get elapsed time string (for live) or packet time string (for replay)
+  std::string get_time_display() const;
+
 private:
   mutable std::mutex mutex_;
   std::map<std::string, endpoint_stats> endpoints_; // Key: "ip:port:protocol"
   std::deque<packet_entry> packets_;
   size_t total_packets_ = 0uz;
   static constexpr auto MAX_PACKETS = 1000uz; // Ringbuffer size
+
+  // Timing information
+  std::chrono::steady_clock::time_point capture_start_;
+  double current_packet_time_ =
+      0.0; // Seconds from PCAP start or elapsed live time
+  bool is_live_capture_ = false;
 };
 
 // Main TUI renderer - manages screen updates
