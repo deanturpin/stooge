@@ -91,13 +91,15 @@ static_assert(!is_valid_port(0), "0 is not valid port");
 // Map common port numbers to protocol/service names
 std::string port_to_service(uint16_t port) {
   // Use system service database (/etc/services)
-  // Try both TCP and UDP since we handle both protocols
+  // Try TCP
   if (auto *serv = getservbyport(htons(port), "tcp"); serv != nullptr)
     return serv->s_name;
 
-  return (auto *serv = getservbyport(htons(port), "udp"); serv != nullptr)
-             ? serv->s_name
-             : {};
+  // Try UDP
+  if (auto *serv = getservbyport(htons(port), "udp"); serv != nullptr)
+    return serv->s_name;
+
+  return {};
 }
 
 // Parsed network packet metadata
@@ -106,12 +108,12 @@ struct packet_info {
   std::string dst_ip;
   std::array<uint8_t, 6> src_mac{};
   std::array<uint8_t, 6> dst_mac{};
-  auto src_port = uint16_t{0};
-  auto dst_port = uint16_t{0};
+  uint16_t src_port = 0;
+  uint16_t dst_port = 0;
   std::string protocol;
-  auto length = 0uz;
+  size_t length = 0uz;
   const uint8_t *payload = nullptr; // Application-layer payload
-  auto payload_length = 0uz;
+  size_t payload_length = 0uz;
 
   // Format packet information as human-readable string with hostnames
   std::string describe() const {

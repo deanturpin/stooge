@@ -24,7 +24,7 @@ struct endpoint_stats {
   std::string hostname;    // Cached DNS lookup
   std::string vendor;      // MAC vendor
   std::string mac_address; // MAC address (formatted as XX:XX:XX:XX:XX:XX)
-  auto packet_count = 0uz;
+  size_t packet_count = 0uz;
   std::chrono::steady_clock::time_point last_seen;
 
   std::string to_string() const;
@@ -66,8 +66,8 @@ private:
   mutable std::mutex mutex_;
   std::map<std::string, endpoint_stats> endpoints_; // Key: "ip:port:protocol"
   std::deque<packet_entry> packets_;
-  auto total_packets_ = 0uz;
-  static constexpr auto MAX_PACKETS = 1000uz; // Ringbuffer size
+  size_t total_packets_ = 0uz;
+  static constexpr size_t MAX_PACKETS = 1000uz; // Ringbuffer size
 };
 
 // Main TUI renderer - manages screen updates
