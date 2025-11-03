@@ -25,7 +25,7 @@ run-text:
 	docker run --rm -v $(PWD):/data --entrypoint /app/build/stooge $(IMAGE) --no-tui /data/laptop.pcapng
 
 # Run live capture (requires elevated privileges)
-live:
+live: build
 	@echo "Starting live capture (requires sudo/elevated privileges)..."
 	docker run --rm -it --cap-add=NET_ADMIN --cap-add=NET_RAW --net=host $(IMAGE)
 
