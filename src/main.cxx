@@ -92,11 +92,12 @@ static_assert(!is_valid_port(0), "0 is not valid port");
 std::string port_to_service(uint16_t port) {
   // Use system service database (/etc/services)
   // Try both TCP and UDP since we handle both protocols
-  if (auto *serv = getservbyport(htons(port), "tcp"))
+  if (auto *serv = getservbyport(htons(port), "tcp"); serv != nullptr)
     return serv->s_name;
 
-  return (auto *serv = getservbyport(htons(port), "udp")) ? serv->s_name
-                                                          : std::string{};
+  return (auto *serv = getservbyport(htons(port), "udp"); serv != nullptr)
+             ? serv->s_name
+             : {};
 }
 
 // Parsed network packet metadata
