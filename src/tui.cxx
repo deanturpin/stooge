@@ -98,19 +98,7 @@ void data_store::set_capture_time(std::chrono::steady_clock::time_point start,
 std::string data_store::get_time_display() const {
   auto lock = std::scoped_lock{mutex_};
 
-  if (is_live_capture_) {
-    // Show elapsed time since capture started
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed =
-        std::chrono::duration_cast<std::chrono::seconds>(now - capture_start_)
-            .count();
-    auto hours = elapsed / 3600;
-    auto minutes = (elapsed % 3600) / 60;
-    auto seconds = elapsed % 60;
-    return std::format("{:02d}:{:02d}:{:02d}", hours, minutes, seconds);
-  }
-
-  // Show PCAP packet time
+  // Show timestamp from most recent packet
   auto total_seconds = static_cast<int>(current_packet_time_);
   auto hours = total_seconds / 3600;
   auto minutes = (total_seconds % 3600) / 60;
