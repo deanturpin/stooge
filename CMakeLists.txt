@@ -1,9 +1,9 @@
 # CMake configuration for stooge - network traffic replayer
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.30)
 project(stooge)
 
-# Use C++23 for std::print, std::format, and modern features
-set(CMAKE_CXX_STANDARD 23)
+# Use C++26 for latest language features
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find libpcap for PCAP file parsing

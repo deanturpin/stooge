@@ -67,7 +67,7 @@ private:
   std::map<std::string, endpoint_stats> endpoints_; // Key: "ip:port:protocol"
   std::deque<packet_entry> packets_;
   size_t total_packets_ = 0uz;
-  static constexpr size_t MAX_PACKETS = 1000uz; // Ringbuffer size
+  static constexpr auto MAX_PACKETS = 1000uz; // Ringbuffer size
 };
 
 // Main TUI renderer - manages screen updates

@@ -1,15 +1,11 @@
 # Multi-stage Docker build for stooge network traffic replayer
-FROM ubuntu:latest
+FROM ubuntu:devel
 
-# Install build tools and g++-14 (required for C++23 support)
+# Install build tools (ubuntu:devel has latest GCC)
 RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    && add-apt-repository ppa:ubuntu-toolchain-r/test -y \
-    && apt-get update \
-    && apt-get install -y \
     build-essential \
     cmake \
-    g++-14 \
+    g++ \
     libpcap-dev \
     liblua5.4-dev \
     pkg-config \
@@ -20,7 +16,7 @@ RUN apt-get update && apt-get install -y \
 RUN git clone https://github.com/ArthurSonzogni/FTXUI.git /tmp/ftxui \
     && cd /tmp/ftxui \
     && mkdir build && cd build \
-    && cmake .. -DCMAKE_CXX_COMPILER=g++-14 \
+    && cmake .. \
     && make -j$(nproc) \
     && make install \
     && rm -rf /tmp/ftxui
@@ -32,9 +28,8 @@ RUN apt-get update && apt-get install -y wget \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
-# Set g++-14 as default compiler
-RUN update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100 \
-    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100
+# Show compiler version
+RUN g++ --version
 
 WORKDIR /app
 

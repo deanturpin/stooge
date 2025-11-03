@@ -19,6 +19,9 @@ struct pinfo_data {
 
 // Stub implementations of Wireshark Lua API functions that dissectors expect
 // These provide minimal functionality to make dissectors loadable
+//
+// Note: All Lua C API functions must return int to indicate how many values
+// were pushed onto the Lua stack. They cannot be void even if they do nothing.
 
 // Proto() constructor stub - creates protocol object
 static int lua_proto_new(lua_State *L) {
@@ -48,21 +51,21 @@ static int lua_proto_new(lua_State *L) {
   return 1; // Return the protocol table
 }
 
-// ProtoField stubs - these just return dummy values since we're not building a
-// full GUI
+// ProtoField stubs - return placeholder values for GUI field definitions
+// The return value indicates 1 item pushed to Lua stack
 static int lua_protofield_string(lua_State *L) {
   lua_pushstring(L, "field");
-  return 1;
+  return 1; // Tells Lua we pushed 1 value
 }
 
 static int lua_protofield_uint16(lua_State *L) {
   lua_pushstring(L, "field");
-  return 1;
+  return 1; // Tells Lua we pushed 1 value
 }
 
 static int lua_protofield_uint8(lua_State *L) {
   lua_pushstring(L, "field");
-  return 1;
+  return 1; // Tells Lua we pushed 1 value
 }
 
 // DissectorTable.get() stub
@@ -73,11 +76,11 @@ static int lua_dissectortable_get(lua_State *L) {
   // Add :add() method that does nothing
   lua_pushstring(L, "add");
   lua_pushcfunction(L, [](lua_State *L) -> int {
-    return 0; // Do nothing
+    return 0; // Return 0 = pushed nothing to stack
   });
   lua_settable(L, -3);
 
-  return 1;
+  return 1; // Return the dissector table
 }
 
 // Register stub Wireshark API
@@ -128,14 +131,14 @@ runtime::runtime() {
     auto val = luaL_checkinteger(L, 1);
     auto shift = luaL_checkinteger(L, 2);
     lua_pushinteger(L, val >> shift);
-    return 1;
+    return 1; // Pushed result to stack
   });
   lua_setfield(L, -2, "rshift");
   lua_pushcfunction(L, [](lua_State *L) -> int {
     auto val1 = luaL_checkinteger(L, 1);
     auto val2 = luaL_checkinteger(L, 2);
     lua_pushinteger(L, val1 & val2);
-    return 1;
+    return 1; // Pushed result to stack
   });
   lua_setfield(L, -2, "band");
   lua_setglobal(L, "bit32");
@@ -164,11 +167,11 @@ bool runtime::load(std::string_view filepath) {
   return true;
 }
 
-// Buffer metatable methods
+// Buffer metatable methods - all must return int for Lua C API
 static int buffer_len(lua_State *L) {
   auto buf = static_cast<buffer_wrapper *>(lua_touserdata(L, 1));
   lua_pushinteger(L, buf->length);
-  return 1;
+  return 1; // Pushed length to stack
 }
 
 // Buffer slice uint() method
@@ -186,14 +189,14 @@ static int buffer_uint(lua_State *L) {
   } else {
     return luaL_error(L, "uint() only supports 1, 2, or 4 byte buffers");
   }
-  return 1;
+  return 1; // Pushed uint value to stack
 }
 
 // Buffer slice string() method
 static int buffer_string(lua_State *L) {
   auto buf = static_cast<buffer_wrapper *>(lua_touserdata(L, 1));
   lua_pushlstring(L, reinterpret_cast<const char *>(buf->data), buf->length);
-  return 1;
+  return 1; // Pushed string to stack
 }
 
 static int buffer_call(lua_State *L) {
@@ -235,7 +238,7 @@ static int buffer_call(lua_State *L) {
   lua_setfield(L, -2, "__index");
   lua_setmetatable(L, -2);
 
-  return 1;
+  return 1; // Pushed new buffer slice to stack
 }
 
 std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
@@ -310,7 +313,7 @@ std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
     }
     // Store in table normally
     lua_rawset(L, 1);
-    return 0;
+    return 0; // Pushed nothing to stack
   });
   lua_setfield(L, -2, "__newindex");
   lua_setmetatable(L, -2); // Set metatable on cols
@@ -328,7 +331,7 @@ std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
     lua_newtable(L);        // new tree
     lua_getmetatable(L, 1); // Copy metatable from self
     lua_setmetatable(L, -2);
-    return 1;
+    return 1; // Pushed new tree to stack
   });
   lua_setfield(L, -2, "add");
   lua_setfield(L, -2, "__index"); // metatable.__index = methods table
