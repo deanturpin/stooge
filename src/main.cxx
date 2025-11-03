@@ -24,7 +24,7 @@
 
 // Replay speed multiplier - 4x means packets play back 4 times faster than
 // captured
-constexpr auto SPEEDUP_FACTOR = 4.0;
+constexpr auto SPEEDUP_FACTOR = 1.0;
 
 // Global flag for signal handling
 static volatile sig_atomic_t stop_capture = 0;
@@ -480,14 +480,14 @@ int main(int argc, char *argv[]) {
       auto dst_vendor = oui::lookup_vendor(info->dst_mac);
 
       // Format MAC addresses
-      auto src_mac_str = std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-                                     info->src_mac[0], info->src_mac[1],
-                                     info->src_mac[2], info->src_mac[3],
-                                     info->src_mac[4], info->src_mac[5]);
-      auto dst_mac_str = std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-                                     info->dst_mac[0], info->dst_mac[1],
-                                     info->dst_mac[2], info->dst_mac[3],
-                                     info->dst_mac[4], info->dst_mac[5]);
+      auto src_mac_str =
+          std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                      info->src_mac[0], info->src_mac[1], info->src_mac[2],
+                      info->src_mac[3], info->src_mac[4], info->src_mac[5]);
+      auto dst_mac_str =
+          std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                      info->dst_mac[0], info->dst_mac[1], info->dst_mac[2],
+                      info->dst_mac[3], info->dst_mac[4], info->dst_mac[5]);
 
       tui_store->add_endpoint(info->src_ip, info->src_port, info->protocol,
                               src_host, src_vendor, src_mac_str);
@@ -498,9 +498,8 @@ int main(int argc, char *argv[]) {
       auto format_endpoint = [](const std::string &ip, uint16_t port,
                                 const std::string &host) {
         if (port == 0)
-          return host.empty() || host == ip
-                     ? ip
-                     : std::format("{} ({})", ip, host);
+          return host.empty() || host == ip ? ip
+                                            : std::format("{} ({})", ip, host);
 
         auto service = port_to_service(port);
         auto port_display = service.empty()

@@ -5,7 +5,7 @@
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
-#include <iostream>
+#include <print>
 #include <thread>
 
 namespace tui {
@@ -29,7 +29,7 @@ void data_store::add_endpoint(const std::string &ip, uint16_t port,
                                const std::string &hostname,
                                const std::string &vendor,
                                const std::string &mac_address) {
-  auto lock = std::lock_guard<std::mutex>{mutex_};
+  auto lock = std::scoped_lock{mutex_};
   auto key = std::string{std::format("{}:{}:{}", ip, port, protocol)};
 
   auto &ep = endpoints_[key];
@@ -47,7 +47,7 @@ void data_store::add_endpoint(const std::string &ip, uint16_t port,
 }
 
 void data_store::add_packet(const packet_entry &entry) {
-  auto lock = std::lock_guard<std::mutex>{mutex_};
+  auto lock = std::scoped_lock{mutex_};
   packets_.push_back(entry);
   if (packets_.size() > MAX_PACKETS)
     packets_.pop_front();
@@ -55,7 +55,7 @@ void data_store::add_packet(const packet_entry &entry) {
 }
 
 std::vector<endpoint_stats> data_store::get_endpoints() const {
-  auto lock = std::lock_guard<std::mutex>{mutex_};
+  auto lock = std::scoped_lock{mutex_};
   auto result = std::vector<endpoint_stats>{};
   result.reserve(endpoints_.size());
 
@@ -71,7 +71,7 @@ std::vector<endpoint_stats> data_store::get_endpoints() const {
 }
 
 std::vector<packet_entry> data_store::get_recent_packets(size_t count) const {
-  auto lock = std::lock_guard<std::mutex>{mutex_};
+  auto lock = std::scoped_lock{mutex_};
   auto result = std::vector<packet_entry>{};
 
   auto start = packets_.size() > count ? packets_.size() - count : 0;
@@ -82,14 +82,16 @@ std::vector<packet_entry> data_store::get_recent_packets(size_t count) const {
 }
 
 size_t data_store::get_total_packets() const {
-  auto lock = std::lock_guard<std::mutex>{mutex_};
+  auto lock = std::scoped_lock{mutex_};
   return total_packets_;
 }
 
 // renderer implementation
 renderer::renderer(std::shared_ptr<data_store> store) : store_(store) {}
 
-renderer::~renderer() { stop(); }
+renderer::~renderer() {
+  stop();
+}
 
 void renderer::start() {
   if (running_)
@@ -100,20 +102,31 @@ void renderer::start() {
 }
 
 void renderer::stop() {
-  if (!running_)
-    return;
-
-  running_ = false;
+  // Use exchange to atomically check and set - only first caller proceeds
+  auto was_running = running_.exchange(false);
+  if (!was_running)
+    return; // Already stopped
 
   // Exit the screen loop if it's still active
-  if (screen_)
-    screen_->Exit();
+  if (screen_) {
+    try {
+      screen_->Exit();
+    } catch (...) {
+      // Suppress exceptions during shutdown
+    }
+  }
 
+  // Join the render thread if it exists and is joinable
   if (render_thread_ && render_thread_->joinable())
     render_thread_->join();
 }
 
 bool renderer::is_running() const { return running_; }
+
+void renderer::set_status(const std::string &message) {
+  auto lock = std::scoped_lock{status_mutex_};
+  status_message_ = message;
+}
 
 void renderer::render_loop() {
   using namespace ftxui;
@@ -207,12 +220,26 @@ void renderer::render_loop() {
 
     auto packet_pane = vbox(packet_elements) | vscroll_indicator | frame | flex;
 
-    // Status bar with shortcuts hint
-    auto status_bar =
-        hbox({text("Shortcuts: ") | dim, text("q") | bold, text("/Esc=Quit ") | dim,
-              text("p") | bold, text("=Pause ") | dim, text("h") | bold,
-              text("/?=Help") | dim}) |
-        bgcolor(Color::GrayDark);
+    // Status bar with shortcuts hint and status message
+    auto status_msg = std::string{};
+    {
+      auto lock = std::scoped_lock{status_mutex_};
+      status_msg = status_message_;
+    }
+
+    auto status_bar = Element{};
+    if (!status_msg.empty()) {
+      // Show status message when present
+      status_bar = hbox({text(status_msg) | bold | color(Color::Yellow)}) |
+                   bgcolor(Color::GrayDark);
+    } else {
+      // Show shortcuts when no status message
+      status_bar = hbox({text("Shortcuts: ") | dim, text("q") | bold,
+                         text("/Esc=Quit ") | dim, text("p") | bold,
+                         text("=Pause ") | dim, text("h") | bold,
+                         text("/?=Help") | dim}) |
+                   bgcolor(Color::GrayDark);
+    }
 
     // Combine panes horizontally with status bar
     return vbox({hbox({endpoint_pane, separator(), packet_pane}) | border | flex,
@@ -260,20 +287,21 @@ void renderer::render_loop() {
           screen.PostEvent(Event::Custom);
       }
     } catch (...) {
-      // Suppress exceptions during shutdown to avoid terminate()
+      // Suppress exceptions during shutdown
     }
   });
 
   screen.Loop(component_with_shortcuts);
 
   // Ensure refresh thread stops before cleanup
+  set_status("Shutting down...");
   running_ = false;
   if (refresh_thread.joinable())
     refresh_thread.join();
 
   // Explicitly reset terminal to clean up any leftover escape codes
   screen_ = nullptr;
-  std::cout << "\033[0m\033[?25h" << std::flush; // Reset attributes and show cursor
+  std::print("\033[0m\033[?25h"); // Reset attributes and show cursor
 }
 
 } // namespace tui

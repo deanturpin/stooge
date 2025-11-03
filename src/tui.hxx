@@ -90,10 +90,13 @@ private:
   std::atomic<bool> running_{false};
   bool paused_ = false;
   bool show_help_ = false;
+  std::string status_message_; // Status line message
+  std::mutex status_mutex_;    // Protect status message updates
   std::unique_ptr<std::thread> render_thread_;
   ftxui::ScreenInteractive *screen_ = nullptr; // Pointer to FTXUI screen for cleanup
 
   void render_loop();
+  void set_status(const std::string &message);
 };
 
 } // namespace tui
