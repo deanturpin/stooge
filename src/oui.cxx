@@ -129,16 +129,18 @@ std::string lookup_vendor(const std::array<uint8_t, 6> &mac) {
   return {};
 }
 
-std::string lookup_vendor(const std::string &mac_str) {
+std::string lookup_vendor(std::string_view mac_str) {
   // Parse MAC address string (supports "00:11:22:33:44:55" or
   // "00-11-22-33-44-55")
   auto mac = std::array<uint8_t, 6>{};
-  auto ss = std::istringstream{mac_str};
+  auto ss = std::istringstream{std::string{mac_str}};
   auto byte_str = std::string{};
   auto idx = 0;
 
-  while (std::getline(ss, byte_str, mac_str.find(':') != std::string::npos ? ':' : '-') &&
-         idx < 6) {
+  while (
+      std::getline(ss, byte_str,
+                   mac_str.find(':') != std::string_view::npos ? ':' : '-') &&
+      idx < 6) {
     mac[idx++] = std::stoi(byte_str, nullptr, 16);
   }
 

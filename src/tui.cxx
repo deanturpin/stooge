@@ -15,20 +15,21 @@ std::string endpoint_stats::to_string() const {
   auto ip_port = std::string{port > 0 ? std::format("{}:{}", ip, port) : ip};
   auto mac_str = std::string{mac_address.empty() ? "-" : mac_address};
   auto vendor_str = std::string{vendor.empty() ? "-" : vendor};
-  auto host_str = std::string{hostname.empty() || hostname == ip ? "-" : hostname};
+  auto host_str =
+      std::string{hostname.empty() || hostname == ip ? "-" : hostname};
 
-  return std::format("{:21} {:8} {:17} {:20} {:30} {:5}",
-                     ip_port.substr(0, 21), protocol.substr(0, 8),
-                     mac_str.substr(0, 17), vendor_str.substr(0, 20),
-                     host_str.substr(0, 30), packet_count);
+  return std::format("{:21} {:8} {:17} {:20} {:30} {:5}", ip_port.substr(0, 21),
+                     protocol.substr(0, 8), mac_str.substr(0, 17),
+                     vendor_str.substr(0, 20), host_str.substr(0, 30),
+                     packet_count);
 }
 
 // data_store implementation
-void data_store::add_endpoint(const std::string &ip, uint16_t port,
-                               const std::string &protocol,
-                               const std::string &hostname,
-                               const std::string &vendor,
-                               const std::string &mac_address) {
+void data_store::add_endpoint(std::string_view ip, uint16_t port,
+                              std::string_view protocol,
+                              std::string_view hostname,
+                              std::string_view vendor,
+                              std::string_view mac_address) {
   auto lock = std::scoped_lock{mutex_};
   auto key = std::string{std::format("{}:{}:{}", ip, port, protocol)};
 
@@ -89,9 +90,7 @@ size_t data_store::get_total_packets() const {
 // renderer implementation
 renderer::renderer(std::shared_ptr<data_store> store) : store_(store) {}
 
-renderer::~renderer() {
-  stop();
-}
+renderer::~renderer() { stop(); }
 
 void renderer::start() {
   if (running_)
@@ -123,7 +122,7 @@ void renderer::stop() {
 
 bool renderer::is_running() const { return running_; }
 
-void renderer::set_status(const std::string &message) {
+void renderer::set_status(std::string_view message) {
   auto lock = std::scoped_lock{status_mutex_};
   status_message_ = message;
 }
@@ -169,7 +168,8 @@ void renderer::render_loop() {
 
     // Column headers
     auto header = std::string{std::format("{:21} {:8} {:17} {:20} {:30} {:5}",
-                                          "IP:Port", "Protocol", "MAC", "Vendor", "Hostname", "Pkts")};
+                                          "IP:Port", "Protocol", "MAC",
+                                          "Vendor", "Hostname", "Pkts")};
     endpoint_elements.push_back(text(header) | bold | color(Color::White));
     endpoint_elements.push_back(separator());
 
@@ -191,15 +191,17 @@ void renderer::render_loop() {
 
     // Build packet list (right pane)
     auto packet_elements = std::vector<Element>{};
-    auto status_text = std::string{paused_ ? "PAUSED" : std::format("Total: {}", total)};
-    packet_elements.push_back(text(std::format("Live Packets ({})", status_text)) |
-                              bold | color(paused_ ? Color::Red : Color::Cyan));
+    auto status_text =
+        std::string{paused_ ? "PAUSED" : std::format("Total: {}", total)};
+    packet_elements.push_back(
+        text(std::format("Live Packets ({})", status_text)) | bold |
+        color(paused_ ? Color::Red : Color::Cyan));
     packet_elements.push_back(separator());
 
     for (const auto &pkt : packets) {
-      auto pkt_line = text(std::format("[{:6d}] {} {} → {} ({} bytes)",
-                                       pkt.number, pkt.protocol, pkt.src,
-                                       pkt.dst, pkt.bytes));
+      auto pkt_line =
+          text(std::format("[{:6d}] {} {} → {} ({} bytes)", pkt.number,
+                           pkt.protocol, pkt.src, pkt.dst, pkt.bytes));
 
       // Colourize by protocol
       if (pkt.protocol == "TCP")
@@ -242,8 +244,9 @@ void renderer::render_loop() {
     }
 
     // Combine panes horizontally with status bar
-    return vbox({hbox({endpoint_pane, separator(), packet_pane}) | border | flex,
-                 status_bar});
+    return vbox(
+        {hbox({endpoint_pane, separator(), packet_pane}) | border | flex,
+         status_bar});
   });
 
   // Capture component to handle keyboard shortcuts

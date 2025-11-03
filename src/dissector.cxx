@@ -149,12 +149,12 @@ runtime::~runtime() {
     lua_close(L);
 }
 
-bool runtime::load(const std::string &filepath) {
+bool runtime::load(std::string_view filepath) {
   if (!L)
     return false;
 
   // Load and execute the Lua dissector script
-  if (luaL_dofile(L, filepath.c_str()) != LUA_OK) {
+  if (luaL_dofile(L, std::string{filepath}.c_str()) != LUA_OK) {
     auto error = std::string{lua_tostring(L, -1)};
     std::print("Error loading dissector {}: {}\n", filepath, error);
     lua_pop(L, 1);
@@ -240,7 +240,7 @@ static int buffer_call(lua_State *L) {
 
 std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
                                        uint16_t src_port, uint16_t dst_port,
-                                       const std::string &protocol) {
+                                       std::string_view protocol) {
   if (!L)
     return std::nullopt;
 

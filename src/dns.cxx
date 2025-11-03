@@ -41,12 +41,12 @@ auto shutdown = false;
 auto init_flag = std::once_flag{};
 
 // Perform blocking DNS lookup (internal helper)
-std::string resolve_blocking(const std::string &ip) {
+std::string resolve_blocking(std::string_view ip) {
   auto sa = sockaddr_in{};
   auto host = std::array<char, NI_MAXHOST>{};
 
   sa.sin_family = AF_INET;
-  inet_pton(AF_INET, ip.c_str(), &sa.sin_addr);
+  inet_pton(AF_INET, std::string{ip}.c_str(), &sa.sin_addr);
 
   auto hostname = std::string{};
   if (getnameinfo(reinterpret_cast<struct sockaddr *>(&sa), sizeof(sa),
@@ -91,26 +91,28 @@ void init_workers() {
 // Perform reverse DNS lookup for an IP address, with caching
 // Returns hostname if found, empty string if lookup fails or not yet resolved
 // Automatically starts background resolution on first lookup
-std::string reverse_lookup(const std::string &ip) {
+std::string reverse_lookup(std::string_view ip) {
 
   // Initialize worker threads first time only
   std::call_once(init_flag, init_workers);
+
+  auto ip_str = std::string{ip};
 
   {
     auto lock = std::scoped_lock{cache_mutex};
 
     // Return cached result if available
-    if (cache.contains(ip))
-      return cache[ip];
+    if (cache.contains(ip_str))
+      return cache[ip_str];
 
     // Mark IP as being resolved (empty string in cache)
-    cache[ip] = {};
+    cache[ip_str] = {};
   }
 
   // Queue for background resolution
   {
     auto lock = std::scoped_lock{queue_mutex};
-    work_queue.push(ip);
+    work_queue.push(ip_str);
   }
   queue_cv.notify_one();
 

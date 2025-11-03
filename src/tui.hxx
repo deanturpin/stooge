@@ -21,10 +21,10 @@ struct endpoint_stats {
   std::string ip;
   uint16_t port;
   std::string protocol;
-  std::string hostname;      // Cached DNS lookup
-  std::string vendor;        // MAC vendor
-  std::string mac_address;   // MAC address (formatted as XX:XX:XX:XX:XX:XX)
-  size_t packet_count = 0;
+  std::string hostname;    // Cached DNS lookup
+  std::string vendor;      // MAC vendor
+  std::string mac_address; // MAC address (formatted as XX:XX:XX:XX:XX:XX)
+  auto packet_count = 0uz;
   std::chrono::steady_clock::time_point last_seen;
 
   std::string to_string() const;
@@ -45,10 +45,10 @@ struct packet_entry {
 class data_store {
 public:
   // Add or update endpoint statistics
-  void add_endpoint(const std::string &ip, uint16_t port,
-                    const std::string &protocol, const std::string &hostname,
-                    const std::string &vendor = "",
-                    const std::string &mac_address = "");
+  void add_endpoint(std::string_view ip, uint16_t port,
+                    std::string_view protocol, std::string_view hostname,
+                    std::string_view vendor = "",
+                    std::string_view mac_address = "");
 
   // Add packet entry to scrolling feed
   void add_packet(const packet_entry &entry);
@@ -66,8 +66,8 @@ private:
   mutable std::mutex mutex_;
   std::map<std::string, endpoint_stats> endpoints_; // Key: "ip:port:protocol"
   std::deque<packet_entry> packets_;
-  size_t total_packets_ = 0;
-  static constexpr size_t MAX_PACKETS = 1000; // Ringbuffer size
+  auto total_packets_ = 0uz;
+  static constexpr auto MAX_PACKETS = 1000uz; // Ringbuffer size
 };
 
 // Main TUI renderer - manages screen updates
@@ -93,10 +93,11 @@ private:
   std::string status_message_; // Status line message
   std::mutex status_mutex_;    // Protect status message updates
   std::unique_ptr<std::thread> render_thread_;
-  ftxui::ScreenInteractive *screen_ = nullptr; // Pointer to FTXUI screen for cleanup
+  ftxui::ScreenInteractive *screen_ =
+      nullptr; // Pointer to FTXUI screen for cleanup
 
   void render_loop();
-  void set_status(const std::string &message);
+  void set_status(std::string_view message);
 };
 
 } // namespace tui

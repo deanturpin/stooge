@@ -10,7 +10,7 @@ all: build run
 
 # Auto-format C++ source files using clang-format
 format:
-	docker run --rm -v $(PWD):/app -w /app ubuntu:latest bash -c "apt-get update && apt-get install -y clang-format && clang-format -i src/*.cxx src/*.hxx"
+	clang-format -i src/*.cxx src/*.hxx
 
 # Build Docker image
 build:

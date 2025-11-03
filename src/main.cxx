@@ -90,20 +90,13 @@ static_assert(!is_valid_port(0), "0 is not valid port");
 
 // Map common port numbers to protocol/service names
 std::string port_to_service(uint16_t port) {
-  static const auto services = std::map<uint16_t, std::string>{
-      {20, "FTP-DATA"},   {21, "FTP"},         {22, "SSH"},
-      {23, "TELNET"},     {25, "SMTP"},        {53, "DNS"},
-      {67, "DHCP"},       {68, "DHCP"},        {80, "HTTP"},
-      {110, "POP3"},      {123, "NTP"},        {143, "IMAP"},
-      {161, "SNMP"},      {443, "HTTPS"},      {445, "SMB"},
-      {465, "SMTPS"},     {587, "SMTP"},       {993, "IMAPS"},
-      {995, "POP3S"},     {3306, "MYSQL"},     {3389, "RDP"},
-      {5432, "PGSQL"},    {5900, "VNC"},       {6379, "REDIS"},
-      {8080, "HTTP-ALT"}, {8443, "HTTPS-ALT"}, {27017, "MONGODB"}};
+  // Use system service database (/etc/services)
+  // Try both TCP and UDP since we handle both protocols
+  if (auto *serv = getservbyport(htons(port), "tcp"))
+    return serv->s_name;
 
-  if (auto it = services.find(port); it != services.end())
-    return it->second;
-  return {};
+  return (auto *serv = getservbyport(htons(port), "udp")) ? serv->s_name
+                                                          : std::string{};
 }
 
 // Parsed network packet metadata
@@ -112,12 +105,12 @@ struct packet_info {
   std::string dst_ip;
   std::array<uint8_t, 6> src_mac{};
   std::array<uint8_t, 6> dst_mac{};
-  uint16_t src_port = 0;
-  uint16_t dst_port = 0;
+  auto src_port = uint16_t{0};
+  auto dst_port = uint16_t{0};
   std::string protocol;
-  size_t length = 0;
+  auto length = 0uz;
   const uint8_t *payload = nullptr; // Application-layer payload
-  size_t payload_length = 0;
+  auto payload_length = 0uz;
 
   // Format packet information as human-readable string with hostnames
   std::string describe() const {
@@ -125,10 +118,10 @@ struct packet_info {
     auto dst_host = dns::reverse_lookup(dst_ip);
 
     // Helper to format IP:port with optional hostname and service
-    auto format_endpoint = [](const std::string &ip, uint16_t port,
-                              const std::string &host) {
+    auto format_endpoint = [](std::string_view ip, uint16_t port,
+                              std::string_view host) {
       if (port == 0)
-        return host.empty() || host == ip ? ip
+        return host.empty() || host == ip ? std::string{ip}
                                           : std::format("{} ({})", ip, host);
 
       auto service = port_to_service(port);
@@ -137,9 +130,9 @@ struct packet_info {
       auto port_display = service.empty() ? std::format("{}", port)
                                           : std::format("{}/{}", port, service);
 
-      if (!host.empty() && host != ip)
-        return std::format("{}:{} ({})", ip, port_display, host);
-      return std::format("{}:{}", ip, port_display);
+      return !host.empty() && host != ip
+                 ? std::format("{}:{} ({})", ip, port_display, host)
+                 : std::format("{}:{}", ip, port_display);
     };
 
     auto src = format_endpoint(src_ip, src_port, src_host);
@@ -240,9 +233,9 @@ struct endpoint {
   std::string to_string() const {
     if (hostname.empty())
       hostname = dns::reverse_lookup(ip);
-    if (!hostname.empty() && hostname != ip)
-      return std::format("{}:{} ({}) [{}]", ip, port, protocol, hostname);
-    return std::format("{}:{} ({})", ip, port, protocol);
+    return !hostname.empty() && hostname != ip
+               ? std::format("{}:{} ({}) [{}]", ip, port, protocol, hostname)
+               : std::format("{}:{} ({})", ip, port, protocol);
   }
 
   // Lexicographic ordering for std::set
@@ -348,7 +341,7 @@ int main(int argc, char *argv[]) {
     }
 
     // List available interfaces for debugging
-    auto interface_count = 0;
+    auto interface_count = 0uz;
     for (auto d = alldevs; d != nullptr; d = d->next)
       interface_count++;
 
@@ -423,7 +416,7 @@ int main(int argc, char *argv[]) {
   // Packet iteration state
   auto header = static_cast<struct pcap_pkthdr *>(nullptr);
   auto packet = static_cast<const u_char *>(nullptr);
-  auto packet_count = 0;
+  auto packet_count = 0uz;
   auto start_time = std::optional<std::chrono::steady_clock::time_point>{};
   auto first_packet_time = std::optional<struct timeval>{};
 
@@ -495,10 +488,10 @@ int main(int argc, char *argv[]) {
                               dst_host, dst_vendor, dst_mac_str);
 
       // Build packet entry
-      auto format_endpoint = [](const std::string &ip, uint16_t port,
-                                const std::string &host) {
+      auto format_endpoint = [](std::string_view ip, uint16_t port,
+                                std::string_view host) {
         if (port == 0)
-          return host.empty() || host == ip ? ip
+          return host.empty() || host == ip ? std::string{ip}
                                             : std::format("{} ({})", ip, host);
 
         auto service = port_to_service(port);
@@ -506,9 +499,9 @@ int main(int argc, char *argv[]) {
                                 ? std::format("{}", port)
                                 : std::format("{}/{}", port, service);
 
-        if (!host.empty() && host != ip)
-          return std::format("{}:{} ({})", ip, port_display, host);
-        return std::format("{}:{}", ip, port_display);
+        return !host.empty() && host != ip
+                   ? std::format("{}:{} ({})", ip, port_display, host)
+                   : std::format("{}:{}", ip, port_display);
       };
 
       auto pkt = tui::packet_entry{};

@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace oui {
 
@@ -12,6 +13,6 @@ namespace oui {
 std::string lookup_vendor(const std::array<uint8_t, 6> &mac);
 
 // Look up vendor name from MAC address string (e.g., "00:11:22:33:44:55")
-std::string lookup_vendor(const std::string &mac_str);
+std::string lookup_vendor(std::string_view mac_str);
 
 } // namespace oui

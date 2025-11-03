@@ -10,6 +10,7 @@ extern "C" {
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace dissector {
@@ -30,13 +31,13 @@ public:
   ~runtime();
 
   // Load a dissector script from file
-  bool load(const std::string &filepath);
+  bool load(std::string_view filepath);
 
   // Execute dissector on packet payload
   // Returns protocol info if dissector succeeds, nullopt otherwise
   std::optional<result> dissect(const uint8_t *payload, size_t length,
                                 uint16_t src_port, uint16_t dst_port,
-                                const std::string &protocol);
+                                std::string_view protocol);
 };
 
 } // namespace dissector
