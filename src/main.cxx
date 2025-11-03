@@ -485,8 +485,11 @@ int main(int argc, char *argv[]) {
     auto info = parse_packet(packet, header);
     if (info) {
       // Add endpoint information to TUI
-      auto src_host = dns::reverse_lookup(info->src_ip);
-      auto dst_host = dns::reverse_lookup(info->dst_ip);
+      // Skip DNS lookups in live mode - they're too slow and cause hangs
+      auto src_host =
+          live_mode ? std::string{} : dns::reverse_lookup(info->src_ip);
+      auto dst_host =
+          live_mode ? std::string{} : dns::reverse_lookup(info->dst_ip);
       auto src_vendor = oui::lookup_vendor(info->src_mac);
       auto dst_vendor = oui::lookup_vendor(info->dst_mac);
 
