@@ -182,10 +182,11 @@ std::optional<packet_info> parse_packet(const u_char *packet,
 
   // Extract TCP port numbers and payload if available
   if (iph->ip_p == IPPROTO_TCP) {
+    auto ip_header_len = iph->ip_hl * 4; // IP header length in bytes
     auto tcph = reinterpret_cast<const struct tcphdr *>(
-        packet + sizeof(struct ether_header) + sizeof(struct ip));
-    if (header->caplen >= sizeof(struct ether_header) + sizeof(struct ip) +
-                              sizeof(struct tcphdr)) {
+        packet + sizeof(struct ether_header) + ip_header_len);
+    if (header->caplen >=
+        sizeof(struct ether_header) + ip_header_len + sizeof(struct tcphdr)) {
       info.protocol = "TCP";
       info.src_port = ntohs(tcph->th_sport);
       info.dst_port = ntohs(tcph->th_dport);
@@ -202,16 +203,17 @@ std::optional<packet_info> parse_packet(const u_char *packet,
     }
   } else if (iph->ip_p == IPPROTO_UDP) {
     // Extract UDP port numbers and payload if available
+    auto ip_header_len = iph->ip_hl * 4; // IP header length in bytes
     auto udph = reinterpret_cast<const struct udphdr *>(
-        packet + sizeof(struct ether_header) + sizeof(struct ip));
-    if (header->caplen >= sizeof(struct ether_header) + sizeof(struct ip) +
-                              sizeof(struct udphdr)) {
+        packet + sizeof(struct ether_header) + ip_header_len);
+    if (header->caplen >=
+        sizeof(struct ether_header) + ip_header_len + sizeof(struct udphdr)) {
       info.protocol = "UDP";
       info.src_port = ntohs(udph->uh_sport);
       info.dst_port = ntohs(udph->uh_dport);
 
-      auto payload_offset = sizeof(struct ether_header) + sizeof(struct ip) +
-                            sizeof(struct udphdr);
+      auto payload_offset =
+          sizeof(struct ether_header) + ip_header_len + sizeof(struct udphdr);
 
       if (header->caplen > payload_offset) {
         info.payload = packet + payload_offset;
