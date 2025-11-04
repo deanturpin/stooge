@@ -136,6 +136,11 @@ private:
   std::optional<std::reference_wrapper<ftxui::ScreenInteractive>>
       screen_; // Reference to FTXUI screen for cleanup
 
+  // Braille spinner animation state
+  size_t spinner_frame_ = 0uz;
+  static constexpr std::array<const char *, 8> SPINNER_FRAMES = {
+      "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"};
+
   void render_loop();
   void set_status(std::string_view message);
 };

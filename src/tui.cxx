@@ -323,14 +323,20 @@ void renderer::render_loop() {
     // Prioritise DNS status over renderer status
     auto final_status = !dns_status.empty() ? dns_status : status_msg;
 
+    // Get current spinner frame (braille animation)
+    auto spinner = std::string{SPINNER_FRAMES[spinner_frame_]};
+    spinner_frame_ = (spinner_frame_ + 1) % SPINNER_FRAMES.size();
+
     auto status_bar = Element{};
     if (!final_status.empty()) {
-      // Show status message when present (DNS or renderer)
-      status_bar = hbox({text(final_status) | bold | color(Color::Yellow)}) |
+      // Show spinner with status message when present (DNS or renderer)
+      status_bar = hbox({text(spinner + " ") | color(Color::Cyan),
+                         text(final_status) | bold | color(Color::Yellow)}) |
                    bgcolor(Color::GrayDark);
     } else {
-      // Show shortcuts when no status message
-      status_bar = hbox({text("Shortcuts: ") | dim, text("q") | bold,
+      // Show spinner with shortcuts when no status message
+      status_bar = hbox({text(spinner + " ") | color(Color::Cyan),
+                         text("Shortcuts: ") | dim, text("q") | bold,
                          text("/Esc=Quit ") | dim, text("Space") | bold,
                          text("=Pause ") | dim, text("h") | bold,
                          text("/?=Help") | dim}) |
