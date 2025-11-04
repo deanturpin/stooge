@@ -217,7 +217,8 @@ void renderer::render_loop() {
   screen_ = std::ref(screen); // Store screen reference for cleanup
 
   // Component that renders the UI
-  auto component = Renderer([&] {
+  // Explicitly capture only what we need - this gives us member access
+  auto component = Renderer([this] {
     // If help is shown, display help overlay
     if (show_help_) {
       auto help_lines = Elements{
@@ -354,42 +355,46 @@ void renderer::render_loop() {
   });
 
   // Capture component to handle keyboard shortcuts
-  auto component_with_shortcuts = CatchEvent(component, [&](Event event) {
-    // Quit shortcuts: q, Esc, Ctrl+C
-    if (event == Event::Character('q') || event == Event::Escape ||
-        (event.is_character() && event.character() == "c" &&
-         event.input() == "\x03")) {
-      running_ = false;
-      screen.Exit();
-      // Invoke quit callback to signal main loop to exit - but only after
-      // we've safely exited the screen loop to avoid double-free
-      // The callback will be invoked after screen.Loop() returns
-      return true;
-    }
+  // Capture this for member access, screen by reference (it's a local in this
+  // function)
+  auto component_with_shortcuts =
+      CatchEvent(component, [this, &screen](Event event) {
+        // Quit shortcuts: q, Esc, Ctrl+C
+        if (event == Event::Character('q') || event == Event::Escape ||
+            (event.is_character() && event.character() == "c" &&
+             event.input() == "\x03")) {
+          running_ = false;
+          screen.Exit();
+          // Invoke quit callback to signal main loop to exit - but only after
+          // we've safely exited the screen loop to avoid double-free
+          // The callback will be invoked after screen.Loop() returns
+          return true;
+        }
 
-    // Toggle help: h or ?
-    if (event == Event::Character('h') || event == Event::Character('?')) {
-      show_help_ = !show_help_;
-      return true;
-    }
+        // Toggle help: h or ?
+        if (event == Event::Character('h') || event == Event::Character('?')) {
+          show_help_ = !show_help_;
+          return true;
+        }
 
-    // Close help with any key when showing help
-    if (show_help_ && event.is_character()) {
-      show_help_ = false;
-      return true;
-    }
+        // Close help with any key when showing help
+        if (show_help_ && event.is_character()) {
+          show_help_ = false;
+          return true;
+        }
 
-    // Pause/unpause: space or p
-    if (event == Event::Character(' ') || event == Event::Character('p')) {
-      paused_ = !paused_;
-      return true;
-    }
+        // Pause/unpause: space or p
+        if (event == Event::Character(' ') || event == Event::Character('p')) {
+          paused_ = !paused_;
+          return true;
+        }
 
-    return false;
-  });
+        return false;
+      });
 
   // Refresh periodically (only when not paused)
-  std::thread refresh_thread([&]() {
+  // Capture this for member access, screen by reference
+  std::thread refresh_thread([this, &screen]() {
     try {
       while (running_) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
