@@ -48,6 +48,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <net/ethernet.h>
 #include <netinet/ip.h>
@@ -396,6 +397,9 @@ int main(int argc, char *argv[]) {
   // Process packets with error handling
   auto capture_result = 0;
   try {
+    if (use_tui)
+      tui_store->set_status("DEBUG: Starting packet processing loop");
+
     while (!stop_capture && (capture_result = pcap_next_ex(
                                  handle.get(), &header, &packet)) >= 0) {
       // Handle pcap_next_ex return values:
@@ -459,10 +463,18 @@ int main(int argc, char *argv[]) {
         tui_store->set_capture_time(packet_offset);
 
       // Parse and display packet information
+      if (use_tui && packet_count % 1000 == 1)
+        tui_store->set_status(
+            std::format("DEBUG: Parsing packet {}", packet_count));
+
       auto info = parse_packet(packet, header);
       if (info) {
         // Add endpoint information to TUI
         // Note: DNS resolution happens in background thread
+        if (use_tui && packet_count % 1000 == 1)
+          tui_store->set_status(std::format(
+              "DEBUG: Looking up vendors for packet {}", packet_count));
+
         auto src_vendor = oui::lookup_vendor(info->src_mac_);
         auto dst_vendor = oui::lookup_vendor(info->dst_mac_);
 
@@ -485,6 +497,10 @@ int main(int argc, char *argv[]) {
         dns::notify_new_work();
 
         // Build packet entry
+        if (use_tui && packet_count % 1000 == 1)
+          tui_store->set_status(std::format(
+              "DEBUG: Formatting endpoints for packet {}", packet_count));
+
         auto format_endpoint = [](std::string_view ip, uint16_t port) {
           if (port == 0)
             return std::string{ip};
@@ -507,6 +523,10 @@ int main(int argc, char *argv[]) {
 
         // Try to dissect application-layer protocol
         if (info->payload_ && info->payload_length_ > 0) {
+          if (use_tui && packet_count % 1000 == 1)
+            tui_store->set_status(std::format(
+                "DEBUG: Dissecting payload for packet {}", packet_count));
+
           auto dissected = dissectors.dissect(
               info->payload_, info->payload_length_, info->src_port_,
               info->dst_port_, info->protocol_);
@@ -532,6 +552,26 @@ int main(int argc, char *argv[]) {
         }
       }
     }
+  } catch (const std::bad_function_call &e) {
+    // Specific handling for bad_function_call - likely lambda/function object
+    // issue
+    if (use_tui && tui_renderer) {
+      try {
+        tui_renderer->stop();
+      } catch (...) {
+        // Suppress cleanup exceptions
+      }
+    }
+    global_renderer.store(nullptr);
+    std::print("\n\nFatal error: bad_function_call at packet {}\n",
+               packet_count);
+    std::print("Error details: {}\n", e.what());
+    std::print(
+        "This indicates a null or invalid function object was called.\n");
+    std::print("Last operation was processing packet {} in {} mode.\n",
+               packet_count, live_mode ? "LIVE" : "REPLAY");
+    dns::stop_resolver();
+    return 1;
   } catch (const std::exception &e) {
     // Ensure TUI is stopped before handling exception
     if (use_tui && tui_renderer) {
@@ -542,7 +582,8 @@ int main(int argc, char *argv[]) {
       }
     }
     global_renderer.store(nullptr);
-    std::print("\n\nFatal error during packet processing: {}\n", e.what());
+    std::print("\n\nFatal error during packet processing at packet {}: {}\n",
+               packet_count, e.what());
     dns::stop_resolver();
     return 1;
   } catch (...) {
