@@ -361,9 +361,9 @@ void renderer::render_loop() {
          event.input() == "\x03")) {
       running_ = false;
       screen.Exit();
-      // Invoke quit callback to signal main loop to exit
-      if (quit_callback_)
-        quit_callback_();
+      // Invoke quit callback to signal main loop to exit - but only after
+      // we've safely exited the screen loop to avoid double-free
+      // The callback will be invoked after screen.Loop() returns
       return true;
     }
 
@@ -412,6 +412,12 @@ void renderer::render_loop() {
   // Explicitly reset terminal to clean up any leftover escape codes
   screen_.reset();
   std::print("\033[0m\033[?25h"); // Reset attributes and show cursor
+
+  // Invoke quit callback after all cleanup is complete to avoid double-free
+  // This ensures the renderer is fully stopped before main loop exits
+  if (quit_callback_) {
+    quit_callback_();
+  }
 }
 
 } // namespace tui
