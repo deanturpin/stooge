@@ -267,13 +267,13 @@ void renderer::render_loop() {
     // Build packet list (right pane)
     auto packet_elements = std::vector<Element>{};
     auto time_display = store_->get_time_display();
-    auto mode_text =
-        std::string{store_->is_live() ? "Live Capture" : "PCAP Replay"};
-    auto status_text =
-        std::string{paused_ ? "PAUSED" : std::format("Total: {}", total)};
-    packet_elements.push_back(text(std::format("{} ({}) | Time: {}", mode_text,
-                                               status_text, time_display)) |
-                              bold | color(paused_ ? Color::Red : Color::Cyan));
+    auto mode_text = std::string{store_->is_live() ? "LIVE" : "REPLAY"};
+    auto title =
+        paused_ ? std::format("{} PAUSED | Time: {}", mode_text, time_display)
+                : std::format("{} packets: {} | Time: {}", mode_text, total,
+                              time_display);
+    packet_elements.push_back(text(title) | bold |
+                              color(paused_ ? Color::Red : Color::Cyan));
     packet_elements.push_back(separator());
 
     // Column headers for packets
