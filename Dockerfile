@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     git \
     catch2 \
+    ieee-data \
     && rm -rf /var/lib/apt/lists/*
 
 # Install FTXUI for terminal UI
@@ -22,13 +23,6 @@ RUN git clone https://github.com/ArthurSonzogni/FTXUI.git /tmp/ftxui \
     && make -j$(nproc) \
     && make install \
     && rm -rf /tmp/ftxui
-
-# Download IEEE OUI database for MAC vendor lookup
-RUN apt-get update && apt-get install -y wget \
-    && wget -q https://standards-oui.ieee.org/oui/oui.txt -O /usr/share/oui.txt \
-    && apt-get remove -y wget \
-    && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/*
 
 # Show compiler version
 RUN g++ --version
