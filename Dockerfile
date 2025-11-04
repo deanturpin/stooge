@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     liblua5.4-dev \
     pkg-config \
     git \
+    catch2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install FTXUI for terminal UI

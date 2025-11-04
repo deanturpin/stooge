@@ -21,3 +21,19 @@ add_executable(stooge src/main.cxx src/dns.cxx src/dissector.cxx src/tui.cxx src
 target_link_libraries(stooge ${PCAP_LIBRARIES} ${LUA_LIBRARIES}
     ftxui::screen ftxui::dom ftxui::component)
 target_include_directories(stooge PRIVATE ${PCAP_INCLUDE_DIRS} ${LUA_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/src)
+
+# Enable testing
+enable_testing()
+
+# Find Catch2
+find_package(Catch2 3 REQUIRED)
+
+# Build test executable
+add_executable(stooge_tests tests/test_dns.cxx src/dns.cxx src/tui.cxx)
+target_link_libraries(stooge_tests PRIVATE Catch2::Catch2WithMain
+    ftxui::screen ftxui::dom ftxui::component)
+target_include_directories(stooge_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# Register tests with CTest
+include(CTest)
+add_test(NAME stooge_tests COMMAND stooge_tests)

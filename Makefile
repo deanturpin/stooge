@@ -28,6 +28,10 @@ text:
 quick: build
 	timeout 100 docker run --rm -v $(PWD):/data --entrypoint /app/build/stooge $(IMAGE) --no-tui /data/laptop.pcapng || true
 
+# Run unit tests
+test: build
+	docker run --rm $(IMAGE) /bin/sh -c "cd /app/build && ctest --output-on-failure"
+
 # Run live capture (requires elevated privileges)
 live: build
 	@echo "Starting live capture (requires sudo/elevated privileges)..."
