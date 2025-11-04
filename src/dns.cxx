@@ -140,6 +140,9 @@ void stop_resolver() {
 }
 
 // Notify DNS thread that new endpoints have been added
-void notify_new_work() { store_ptr->notify_new_endpoints(dns_cv); }
+void notify_new_work() {
+  if (store_ptr)
+    store_ptr->notify_new_endpoints(dns_cv);
+}
 
 } // namespace dns
