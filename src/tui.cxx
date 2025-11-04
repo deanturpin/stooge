@@ -393,13 +393,19 @@ void renderer::render_loop() {
       });
 
   // Refresh periodically (only when not paused)
-  // Capture this for member access, screen by reference
-  std::thread refresh_thread([this, &screen]() {
+  // Only capture this - use screen_ member variable instead of capturing screen
+  std::thread refresh_thread([this]() {
     try {
       while (running_) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        if (running_ && !paused_)
-          screen.PostEvent(Event::Custom);
+        if (running_ && !paused_ && screen_.has_value()) {
+          try {
+            screen_->get().PostEvent(Event::Custom);
+          } catch (...) {
+            // Screen might be shutting down, ignore
+            break;
+          }
+        }
       }
     } catch (...) {
       // Suppress exceptions during shutdown
