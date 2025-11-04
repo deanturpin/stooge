@@ -15,4 +15,7 @@ void start_resolver(std::shared_ptr<tui::data_store> store);
 
 // Stop DNS resolution thread
 void stop_resolver();
+
+// Notify DNS thread that new endpoints have been added
+void notify_new_work();
 } // namespace dns

@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <deque>
 #include <map>
 #include <memory>
@@ -83,6 +84,13 @@ public:
 
   // Get current status message
   std::string get_status() const;
+
+  // Wait for new unresolved IPs (blocks until notified or timeout)
+  void wait_for_work(std::unique_lock<std::mutex> &lock,
+                     std::condition_variable &cv) const;
+
+  // Notify waiting threads that new endpoints have been added
+  void notify_new_endpoints(std::condition_variable &cv);
 
 private:
   mutable std::mutex mutex_;

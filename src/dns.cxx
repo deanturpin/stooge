@@ -24,6 +24,8 @@ namespace {
 auto dns_thread = std::unique_ptr<std::thread>{};
 auto shutdown = std::atomic<bool>{false};
 auto store_ptr = std::shared_ptr<tui::data_store>{};
+auto dns_cv = std::condition_variable{};
+auto dns_mutex = std::mutex{};
 
 // Perform blocking DNS lookup (internal helper)
 std::string resolve_blocking(std::string_view ip) {
@@ -60,6 +62,15 @@ void dns_resolver_thread() {
   auto resolved_ips = std::set<std::string>{};
 
   while (!shutdown) {
+    // Wait for work (new endpoints or timeout)
+    {
+      auto lock = std::unique_lock{dns_mutex};
+      store_ptr->wait_for_work(lock, dns_cv);
+    }
+
+    if (shutdown)
+      return;
+
     // Get list of IPs that need resolution
     auto unresolved = store_ptr->get_unresolved_ips();
 
@@ -102,9 +113,6 @@ void dns_resolver_thread() {
     // Clear status when all done
     if (unresolved.empty() || resolved_ips.size() == unresolved.size())
       store_ptr->set_status("");
-
-    // Sleep before next scan
-    std::this_thread::sleep_for(1s);
   }
 }
 } // anonymous namespace
@@ -122,6 +130,7 @@ void start_resolver(std::shared_ptr<tui::data_store> store) {
 // Stop DNS resolution thread
 void stop_resolver() {
   shutdown = true;
+  dns_cv.notify_one(); // Wake up DNS thread to check shutdown flag
 
   if (dns_thread && dns_thread->joinable())
     dns_thread->join();
@@ -129,5 +138,8 @@ void stop_resolver() {
   dns_thread.reset();
   store_ptr.reset();
 }
+
+// Notify DNS thread that new endpoints have been added
+void notify_new_work() { store_ptr->notify_new_endpoints(dns_cv); }
 
 } // namespace dns

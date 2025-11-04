@@ -472,6 +472,10 @@ int main(int argc, char *argv[]) {
       tui_store->add_endpoint(info->dst_ip, info->dst_port, info->protocol, "",
                               dst_vendor, dst_mac_str);
 
+      // Notify DNS thread that new endpoints may need resolution
+      if (!live_mode)
+        dns::notify_new_work();
+
       // Build packet entry
       auto format_endpoint = [](std::string_view ip, uint16_t port) {
         if (port == 0)
