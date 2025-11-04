@@ -64,15 +64,11 @@ void load_database() {
   if (loaded)
     return;
 
-  // Try ieee-data package location first, fall back to manual location
   auto file = std::ifstream{"/usr/share/ieee-data/oui.txt"};
   if (!file.is_open()) {
-    file = std::ifstream{"/usr/share/oui.txt"};
-    if (!file.is_open()) {
-      // Database file not found (don't print - TUI might be active)
-      loaded = true;
-      return;
-    }
+    // Database file not found (don't print - TUI might be active)
+    loaded = true;
+    return;
   }
 
   auto line = std::string{};
