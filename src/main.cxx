@@ -9,16 +9,15 @@
 //    - Extracts endpoint information (IP, port, protocol, MAC, vendor)
 //    - Updates data_store with packet and endpoint information
 //    - Respects original packet timing for realistic replay
-//    - In live mode: DNS disabled to prevent 24s hangs
-//    - In replay mode: DNS enabled, runs in background thread
+//    - Notifies DNS thread when new endpoints are added
 //
-// 2. DNS Resolver Thread (background hostname resolution - replay mode only)
-//    - Periodically scans data_store endpoint map for unresolved IPs
-//    - Performs reverse DNS lookups using getnameinfo() (blocking)
-//    - Updates all endpoints with resolved hostnames
+// 2. DNS Resolver Thread (background hostname resolution)
+//    - Waits for notification of new endpoints (or 5s timeout)
+//    - Scans data_store endpoint map for unresolved IPs
+//    - Performs reverse DNS lookups with 2-second timeout per IP
+//    - Updates all endpoints with resolved hostnames (or IP if failed)
 //    - Tracks resolved IPs to prevent duplicate lookups
 //    - Runs continuously until stop_resolver() is called
-//    - Not started in live capture mode to avoid DNS hangs
 //
 // 3. TUI Render Thread (terminal interface)
 //    - Manages FTXUI screen and component lifecycle
@@ -355,9 +354,8 @@ int main(int argc, char *argv[]) {
   auto tui_store = std::make_shared<tui::data_store>();
   std::unique_ptr<tui::renderer> tui_renderer;
 
-  // Start DNS resolver thread to work on endpoint map
-  if (!live_mode)
-    dns::start_resolver(tui_store);
+  // Start DNS resolver thread to work on endpoint map (with 2s timeout)
+  dns::start_resolver(tui_store);
 
   if (use_tui) {
     tui_renderer = std::make_unique<tui::renderer>(tui_store);
@@ -473,8 +471,7 @@ int main(int argc, char *argv[]) {
                               dst_vendor, dst_mac_str);
 
       // Notify DNS thread that new endpoints may need resolution
-      if (!live_mode)
-        dns::notify_new_work();
+      dns::notify_new_work();
 
       // Build packet entry
       auto format_endpoint = [](std::string_view ip, uint16_t port) {
