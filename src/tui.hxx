@@ -69,6 +69,9 @@ public:
   // Get elapsed time string (for live) or packet time string (for replay)
   std::string get_time_display() const;
 
+  // Check if we're in live capture mode
+  bool is_live() const;
+
 private:
   mutable std::mutex mutex_;
   std::map<std::string, endpoint_stats> endpoints_; // Key: "ip:port:protocol"

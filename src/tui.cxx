@@ -106,6 +106,11 @@ std::string data_store::get_time_display() const {
   return std::format("{:02d}:{:02d}:{:02d}", hours, minutes, seconds);
 }
 
+bool data_store::is_live() const {
+  auto lock = std::scoped_lock{mutex_};
+  return is_live_capture_;
+}
+
 // renderer implementation
 renderer::renderer(std::shared_ptr<data_store> store) : store_(store) {}
 
@@ -211,9 +216,11 @@ void renderer::render_loop() {
     // Build packet list (right pane)
     auto packet_elements = std::vector<Element>{};
     auto time_display = store_->get_time_display();
+    auto mode_text =
+        std::string{store_->is_live() ? "Live Capture" : "PCAP Replay"};
     auto status_text =
         std::string{paused_ ? "PAUSED" : std::format("Total: {}", total)};
-    packet_elements.push_back(text(std::format("Live Packets ({}) | Time: {}",
+    packet_elements.push_back(text(std::format("{} ({}) | Time: {}", mode_text,
                                                status_text, time_display)) |
                               bold | color(paused_ ? Color::Red : Color::Cyan));
     packet_elements.push_back(separator());
