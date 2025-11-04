@@ -63,7 +63,10 @@ public:
   // Get total packet count
   size_t get_total_packets() const;
 
-  // Set current packet time and mode (live vs replay)
+  // Set capture mode (live vs replay) - call once during initialization
+  void set_capture_mode(bool is_live);
+
+  // Set current packet time
   void set_capture_time(double current_seconds);
 
   // Get elapsed time string (for live) or packet time string (for replay)

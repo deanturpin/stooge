@@ -89,10 +89,14 @@ size_t data_store::get_total_packets() const {
   return total_packets_.load();
 }
 
+void data_store::set_capture_mode(bool is_live) {
+  // Set capture mode once during initialization
+  is_live_capture_.store(is_live);
+}
+
 void data_store::set_capture_time(double current_seconds) {
-  // Atomic writes - no lock needed
+  // Atomic write - no lock needed
   current_packet_time_.store(current_seconds);
-  is_live_capture_.store(current_seconds == 0.0); // Live if time is 0
 }
 
 std::string data_store::get_time_display() const {

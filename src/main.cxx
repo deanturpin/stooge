@@ -58,6 +58,7 @@
 #include <print>
 #include <string>
 #include <thread>
+#include <unistd.h>
 
 // Replay speed multiplier - 4x means packets play back 4 times faster than
 // captured
@@ -254,7 +255,8 @@ int main(int argc, char *argv[]) {
   auto handle =
       std::unique_ptr<pcap_t, decltype(pcap_deleter)>{nullptr, pcap_deleter};
   auto live_mode = false;
-  auto use_tui = true; // Enable TUI by default
+  // Auto-detect TTY: enable TUI only if stdin is a terminal
+  auto use_tui = isatty(STDIN_FILENO) != 0;
 
   // Parse command-line arguments
   auto pcap_file = std::string{};
@@ -358,6 +360,7 @@ int main(int argc, char *argv[]) {
 
   // Initialise TUI data store (but don't start renderer yet)
   auto tui_store = std::make_shared<tui::data_store>();
+  tui_store->set_capture_mode(live_mode); // Set mode before packet processing
   std::unique_ptr<tui::renderer> tui_renderer;
 
   // Start DNS resolver thread to work on endpoint map (with 2s timeout)
