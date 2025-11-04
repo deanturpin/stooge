@@ -272,10 +272,16 @@ void renderer::render_loop() {
     auto packet_elements = std::vector<Element>{};
     auto time_display = store_->get_time_display();
     auto mode_text = std::string{store_->is_live() ? "LIVE" : "REPLAY"};
+
+    // Get current spinner frame (braille animation)
+    auto spinner = std::string{SPINNER_FRAMES[spinner_frame_]};
+    if (!paused_)
+      spinner_frame_ = (spinner_frame_ + 1) % SPINNER_FRAMES.size();
+
     auto title =
         paused_ ? std::format("{} PAUSED | Time: {}", mode_text, time_display)
-                : std::format("{} packets: {} | Time: {}", mode_text, total,
-                              time_display);
+                : std::format("{} packets: {} | Time: {} {}", mode_text, total,
+                              time_display, spinner);
     packet_elements.push_back(text(title) | bold |
                               color(paused_ ? Color::Red : Color::Cyan));
     packet_elements.push_back(separator());
@@ -323,20 +329,14 @@ void renderer::render_loop() {
     // Prioritise DNS status over renderer status
     auto final_status = !dns_status.empty() ? dns_status : status_msg;
 
-    // Get current spinner frame (braille animation)
-    auto spinner = std::string{SPINNER_FRAMES[spinner_frame_]};
-    spinner_frame_ = (spinner_frame_ + 1) % SPINNER_FRAMES.size();
-
     auto status_bar = Element{};
     if (!final_status.empty()) {
-      // Show spinner with status message when present (DNS or renderer)
-      status_bar = hbox({text(spinner + " ") | color(Color::Cyan),
-                         text(final_status) | bold | color(Color::Yellow)}) |
+      // Show status message when present (DNS or renderer)
+      status_bar = hbox({text(final_status) | bold | color(Color::Yellow)}) |
                    bgcolor(Color::GrayDark);
     } else {
-      // Show spinner with shortcuts when no status message
-      status_bar = hbox({text(spinner + " ") | color(Color::Cyan),
-                         text("Shortcuts: ") | dim, text("q") | bold,
+      // Show shortcuts when no status message
+      status_bar = hbox({text("Shortcuts: ") | dim, text("q") | bold,
                          text("/Esc=Quit ") | dim, text("Space") | bold,
                          text("=Pause ") | dim, text("h") | bold,
                          text("/?=Help") | dim}) |
