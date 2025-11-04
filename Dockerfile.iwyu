@@ -1,0 +1,34 @@
+# Dockerfile for running include-what-you-use analysis
+FROM ubuntu:devel
+
+# Install build tools and IWYU
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    g++ \
+    libpcap-dev \
+    liblua5.4-dev \
+    pkg-config \
+    git \
+    iwyu \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install FTXUI for terminal UI
+RUN git clone https://github.com/ArthurSonzogni/FTXUI.git /tmp/ftxui \
+    && cd /tmp/ftxui \
+    && mkdir build && cd build \
+    && cmake .. \
+    && make -j$(nproc) \
+    && make install \
+    && rm -rf /tmp/ftxui
+
+WORKDIR /app
+
+# Copy all source files into container
+COPY . .
+
+# Generate compile_commands.json
+RUN cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build
+
+# Run IWYU on all source files
+CMD find src -name "*.cxx" -exec echo "=== Analyzing {} ===" \; -exec iwyu -Xiwyu --mapping_file=.iwyu.imp -I/app/src -I/app/build -I/usr/local/include -I/usr/include $(pkg-config --cflags libpcap lua5.4) -std=c++26 {} \;

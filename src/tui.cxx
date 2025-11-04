@@ -148,14 +148,13 @@ std::string data_store::get_status() const {
 
 void data_store::wait_for_work(std::condition_variable &cv,
                                std::mutex &cv_mutex) const {
-  // Wait until notified or timeout after 5 seconds
-  // Predicate is checked with cv_mutex held, which condition_variable
-  // releases/reacquires automatically during wait
+  // Wait until notified or timeout after 30 seconds
+  // Predicate ensures we only wake when there's actual work to do
   auto lock = std::unique_lock{cv_mutex};
-  cv.wait_for(lock, std::chrono::seconds(5));
-
-  // After waking up, check if there's actually work to do
-  // (no predicate needed, caller will check get_unresolved_ips())
+  cv.wait_for(lock, std::chrono::seconds(30), [this] {
+    // Only wake if there are unresolved IPs
+    return !get_unresolved_ips().empty();
+  });
 }
 
 void data_store::notify_new_endpoints(std::condition_variable &cv) {
