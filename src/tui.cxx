@@ -263,10 +263,17 @@ void renderer::render_loop() {
                               bold | color(paused_ ? Color::Red : Color::Cyan));
     packet_elements.push_back(separator());
 
+    // Column headers for packets
+    auto pkt_header =
+        std::string{std::format("{:8} {:8} {:45} {:10}", "Number", "Protocol",
+                                "Source → Destination", "Bytes")};
+    packet_elements.push_back(text(pkt_header) | bold | color(Color::White));
+    packet_elements.push_back(separator());
+
     for (const auto &pkt : packets) {
-      auto pkt_line =
-          text(std::format("[{:6d}] {} {} → {} ({} bytes)", pkt.number,
-                           pkt.protocol, pkt.src, pkt.dst, pkt.bytes));
+      auto pkt_line = text(
+          std::format("{:<8d} {:<8} {:<45} {:<10}", pkt.number, pkt.protocol,
+                      std::format("{} → {}", pkt.src, pkt.dst), pkt.bytes));
 
       // Colourize by protocol
       if (pkt.protocol == "TCP")

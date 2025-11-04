@@ -62,6 +62,12 @@ void dns_resolver_thread() {
     // Get list of IPs that need resolution
     auto unresolved = store_ptr->get_unresolved_ips();
 
+    // Show progress if there are IPs to resolve
+    if (!unresolved.empty()) {
+      store_ptr->set_status(
+          std::format("DNS: {} unresolved", unresolved.size()));
+    }
+
     // Resolve each IP that hasn't been resolved yet
     for (const auto &ip : unresolved) {
       if (shutdown)
@@ -72,7 +78,9 @@ void dns_resolver_thread() {
         continue;
 
       // Update status bar with current resolution
-      store_ptr->set_status(std::format("Resolving {}", ip));
+      store_ptr->set_status(
+          std::format("DNS: Resolving {} ({} remaining)", ip,
+                      unresolved.size() - resolved_ips.size()));
 
       // Resolve DNS with 2 second timeout
       auto hostname = resolve_with_timeout(ip);
@@ -83,10 +91,11 @@ void dns_resolver_thread() {
 
       // Mark as resolved (even if it failed, don't retry)
       resolved_ips.insert(ip);
-
-      // Clear status after resolution
-      store_ptr->set_status("");
     }
+
+    // Clear status when all done
+    if (unresolved.empty() || resolved_ips.size() == unresolved.size())
+      store_ptr->set_status("");
 
     // Sleep before next scan
     std::this_thread::sleep_for(1s);
