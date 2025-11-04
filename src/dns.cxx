@@ -88,11 +88,11 @@ void dns_resolver_thread() {
       // Resolve DNS with 2 second timeout
       auto hostname = resolve_with_timeout(ip);
 
-      // Update all endpoints with this IP (use sentinel for failed lookups)
+      // Update all endpoints with this IP (use IP itself for failed lookups)
       if (!hostname.empty())
         store_ptr->update_hostname(ip, hostname);
       else
-        store_ptr->update_hostname(ip, "-"); // Mark as unresolvable
+        store_ptr->update_hostname(ip, ip); // Mark as attempted (IP = hostname)
 
       // Mark as resolved (even if it failed, don't retry)
       resolved_ips.insert(ip);
