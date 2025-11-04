@@ -217,7 +217,7 @@ void renderer::render_loop() {
           separator(),
           text(""),
           text("  q / Esc     Quit application"),
-          text("  p           Pause/unpause display"),
+          text("  Space / p   Pause/unpause display"),
           text("  h / ?       Toggle this help"),
           text("  Ctrl+C      Quit application"),
           text(""),
@@ -327,7 +327,7 @@ void renderer::render_loop() {
     } else {
       // Show shortcuts when no status message
       status_bar = hbox({text("Shortcuts: ") | dim, text("q") | bold,
-                         text("/Esc=Quit ") | dim, text("p") | bold,
+                         text("/Esc=Quit ") | dim, text("Space") | bold,
                          text("=Pause ") | dim, text("h") | bold,
                          text("/?=Help") | dim}) |
                    bgcolor(Color::GrayDark);
@@ -362,8 +362,8 @@ void renderer::render_loop() {
       return true;
     }
 
-    // Pause/unpause: p
-    if (event == Event::Character('p')) {
+    // Pause/unpause: space or p
+    if (event == Event::Character(' ') || event == Event::Character('p')) {
       paused_ = !paused_;
       return true;
     }
