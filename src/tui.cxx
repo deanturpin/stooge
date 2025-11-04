@@ -254,9 +254,12 @@ void renderer::render_loop() {
     auto header = std::string{std::format("{:21} {:8} {:17} {:20} {:30} {:5}",
                                           "IP:Port", "Protocol", "MAC",
                                           "Vendor", "Hostname", "Pkts")};
+
+    // Add header line
     endpoint_elements.push_back(text(header) | bold | color(Color::White));
     endpoint_elements.push_back(separator());
 
+    // Add each endpoint
     for (const auto &ep : endpoints) {
       auto ep_text = text(ep.to_string());
       // Colourize by protocol
@@ -270,6 +273,7 @@ void renderer::render_loop() {
       endpoint_elements.push_back(ep_text);
     }
 
+    // Create vertical scrollable endpoint pane
     auto endpoint_pane =
         vbox(endpoint_elements) | vscroll_indicator | frame | flex;
 
@@ -426,9 +430,8 @@ void renderer::render_loop() {
 
   // Invoke quit callback after all cleanup is complete to avoid double-free
   // This ensures the renderer is fully stopped before main loop exits
-  if (quit_callback_) {
+  if (quit_callback_)
     quit_callback_();
-  }
 }
 
 } // namespace tui

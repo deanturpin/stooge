@@ -14,6 +14,7 @@ format:
 
 # Build Docker image
 build:
+	# docker build --no-cache -t $(IMAGE) .
 	docker build -t $(IMAGE) .
 
 # Run container with sample PCAP file (interactive TUI mode)
