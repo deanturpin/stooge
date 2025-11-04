@@ -6,6 +6,9 @@ project(stooge)
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Build with debug symbols
+set(CMAKE_BUILD_TYPE Debug)
+
 # Find libpcap for PCAP file parsing
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PCAP REQUIRED libpcap)

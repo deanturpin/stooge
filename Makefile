@@ -38,6 +38,13 @@ live: build
 	# docker run --rm -it --cap-add=NET_ADMIN --cap-add=NET_RAW --net=host $(IMAGE)
 	docker run --rm -it --network=host $(IMAGE)
 
+# Run with GDB for debugging crashes
+gdb: build
+	@echo "Starting GDB debugging session..."
+	docker run --rm -it --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
+		-v $(PWD):/data --entrypoint /bin/bash $(IMAGE) \
+		-c "gdb -ex run --args /app/build/stooge /data/laptop.pcapng"
+
 # Remove Docker image
 clean:
 	docker rmi $(IMAGE) || true

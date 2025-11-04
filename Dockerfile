@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     g++ \
+    gdb \
     libpcap-dev \
     liblua5.4-dev \
     pkg-config \
