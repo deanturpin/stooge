@@ -141,8 +141,12 @@ void stop_resolver() {
 
 // Notify DNS thread that new endpoints have been added
 void notify_new_work() {
-  if (store_ptr)
+  if (store_ptr != nullptr) {
     store_ptr->notify_new_endpoints(dns_cv);
+  } else {
+    // Store has been reset during shutdown - skip notification
+    // This prevents bad_function_call race condition
+  }
 }
 
 } // namespace dns
