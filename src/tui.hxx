@@ -132,8 +132,8 @@ private:
   std::string status_message_; // Status line message
   std::mutex status_mutex_;    // Protect status message updates
   std::unique_ptr<std::thread> render_thread_;
-  ftxui::ScreenInteractive *screen_ =
-      nullptr; // Pointer to FTXUI screen for cleanup
+  std::optional<std::reference_wrapper<ftxui::ScreenInteractive>>
+      screen_; // Reference to FTXUI screen for cleanup
 
   void render_loop();
   void set_status(std::string_view message);

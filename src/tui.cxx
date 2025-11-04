@@ -187,9 +187,9 @@ void renderer::stop() {
     return; // Already stopped
 
   // Exit the screen loop if it's still active
-  if (screen_) {
+  if (screen_.has_value()) {
     try {
-      screen_->Exit();
+      screen_->get().Exit();
     } catch (...) {
       // Suppress exceptions during shutdown
     }
@@ -211,7 +211,7 @@ void renderer::render_loop() {
   using namespace ftxui;
 
   auto screen = ScreenInteractive::Fullscreen();
-  screen_ = &screen; // Store screen pointer for cleanup
+  screen_ = std::ref(screen); // Store screen reference for cleanup
 
   // Component that renders the UI
   auto component = Renderer([&] {
@@ -398,7 +398,7 @@ void renderer::render_loop() {
     refresh_thread.join();
 
   // Explicitly reset terminal to clean up any leftover escape codes
-  screen_ = nullptr;
+  screen_.reset();
   std::print("\033[0m\033[?25h"); // Reset attributes and show cursor
 }
 

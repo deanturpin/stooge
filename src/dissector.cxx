@@ -116,7 +116,7 @@ static void register_wireshark_api(lua_State *L) {
 
 runtime::runtime() {
   L = luaL_newstate();
-  if (!L) {
+  if (L == nullptr) {
     std::print("Failed to create Lua state\n");
     return;
   }
@@ -148,12 +148,12 @@ runtime::runtime() {
 }
 
 runtime::~runtime() {
-  if (L)
+  if (L != nullptr)
     lua_close(L);
 }
 
 bool runtime::load(std::string_view filepath) {
-  if (!L)
+  if (L == nullptr)
     return false;
 
   // Load and execute the Lua dissector script
@@ -244,7 +244,7 @@ static int buffer_call(lua_State *L) {
 std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
                                        uint16_t src_port, uint16_t dst_port,
                                        std::string_view protocol) {
-  if (!L)
+  if (L == nullptr)
     return std::nullopt;
 
   if (length == 0uz)

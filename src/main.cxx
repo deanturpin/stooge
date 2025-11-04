@@ -67,13 +67,13 @@ constexpr auto SPEEDUP_FACTOR = 1.0;
 
 // Global flag for signal handling
 static volatile sig_atomic_t stop_capture = 0;
-static tui::renderer *global_renderer = nullptr;
+static std::atomic<tui::renderer *> global_renderer{nullptr};
 
 // Signal handler for graceful shutdown
 static void signal_handler(int signum) {
   stop_capture = 1;
-  if (global_renderer)
-    global_renderer->stop();
+  if (auto renderer = global_renderer.load(); renderer != nullptr)
+    renderer->stop();
 }
 
 // Compile-time validation
@@ -246,8 +246,15 @@ int main(int argc, char *argv[]) {
   std::signal(SIGINT, signal_handler);  // Ctrl+C
   std::signal(SIGTERM, signal_handler); // docker stop/kill
 
+  // Custom deleter for pcap_t RAII wrapper
+  auto pcap_deleter = [](pcap_t *p) {
+    if (p != nullptr)
+      pcap_close(p);
+  };
+
   auto errbuf = std::array<char, PCAP_ERRBUF_SIZE>{};
-  pcap_t *handle = nullptr;
+  auto handle =
+      std::unique_ptr<pcap_t, decltype(pcap_deleter)>{nullptr, pcap_deleter};
   auto live_mode = false;
   auto use_tui = true; // Enable TUI by default
 
@@ -308,7 +315,8 @@ int main(int argc, char *argv[]) {
       interface_count++;
 
     // Open live capture
-    handle = pcap_open_live(dev_name.c_str(), 65535, 1, 1000, errbuf.data());
+    handle.reset(
+        pcap_open_live(dev_name.c_str(), 65535, 1, 1000, errbuf.data()));
     pcap_freealldevs(alldevs);
 
     if (!handle) {
@@ -332,7 +340,7 @@ int main(int argc, char *argv[]) {
     std::print("Press Ctrl+C to stop\n\n");
   } else {
     // Replay mode - read from file
-    handle = pcap_open_offline(pcap_file.c_str(), errbuf.data());
+    handle.reset(pcap_open_offline(pcap_file.c_str(), errbuf.data()));
     if (!handle) {
       std::print("Error opening file {}: {}\n", pcap_file, errbuf.data());
       return 1;
@@ -359,7 +367,7 @@ int main(int argc, char *argv[]) {
 
   if (use_tui) {
     tui_renderer = std::make_unique<tui::renderer>(tui_store);
-    global_renderer = tui_renderer.get();
+    global_renderer.store(tui_renderer.get());
 
     // Start TUI renderer - this will take over the screen
     // Wrap in try-catch to handle terminal/TTY errors gracefully
@@ -373,7 +381,6 @@ int main(int argc, char *argv[]) {
       std::print("  - Use --no-tui flag for non-interactive environments\n");
       std::print("    Example: {} --no-tui {}\n", argv[0],
                  pcap_file.empty() ? "<pcap-file>" : pcap_file);
-      pcap_close(handle);
       return 1;
     }
   }
@@ -388,7 +395,7 @@ int main(int argc, char *argv[]) {
   // Process packets with error handling
   auto capture_result = 0;
   while (!stop_capture &&
-         (capture_result = pcap_next_ex(handle, &header, &packet)) >= 0) {
+         (capture_result = pcap_next_ex(handle.get(), &header, &packet)) >= 0) {
     // Handle pcap_next_ex return values:
     // 1 = packet read successfully
     // 0 = timeout elapsed (live capture)
@@ -531,11 +538,11 @@ int main(int argc, char *argv[]) {
       std::print("Warning: TUI cleanup error: {}\n", e.what());
     }
   }
-  global_renderer = nullptr;
+  global_renderer.store(nullptr);
 
   // Check if capture ended due to error
   if (capture_result == -1) {
-    std::print("\n\nCapture error: {}\n", pcap_geterr(handle));
+    std::print("\n\nCapture error: {}\n", pcap_geterr(handle.get()));
     std::print("This can happen when:\n");
     std::print("  - Network interface goes down\n");
     std::print("  - Running in restricted Docker environment\n");
@@ -554,6 +561,6 @@ int main(int argc, char *argv[]) {
   // Stop DNS resolver thread
   dns::stop_resolver();
 
-  pcap_close(handle);
+  // pcap handle will be automatically closed by unique_ptr destructor
   return capture_result == -1 ? 1 : 0;
 }
