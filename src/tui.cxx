@@ -149,17 +149,16 @@ std::string data_store::get_status() const {
   return status_message_;
 }
 
-void data_store::wait_for_work(std::unique_lock<std::mutex> &lock,
-                               std::condition_variable &cv) const {
-  // Wait until there are unresolved IPs or timeout after 5 seconds
-  cv.wait_for(lock, std::chrono::seconds(5), [this] {
-    // Check if there are any unresolved IPs (without acquiring lock again)
-    for (const auto &[key, ep] : endpoints_) {
-      if (ep.hostname.empty())
-        return true;
-    }
-    return false;
-  });
+void data_store::wait_for_work(std::condition_variable &cv,
+                               std::mutex &cv_mutex) const {
+  // Wait until notified or timeout after 5 seconds
+  // Predicate is checked with cv_mutex held, which condition_variable
+  // releases/reacquires automatically during wait
+  auto lock = std::unique_lock{cv_mutex};
+  cv.wait_for(lock, std::chrono::seconds(5));
+
+  // After waking up, check if there's actually work to do
+  // (no predicate needed, caller will check get_unresolved_ips())
 }
 
 void data_store::notify_new_endpoints(std::condition_variable &cv) {

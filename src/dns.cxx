@@ -63,10 +63,7 @@ void dns_resolver_thread() {
 
   while (!shutdown) {
     // Wait for work (new endpoints or timeout)
-    {
-      auto lock = std::unique_lock{dns_mutex};
-      store_ptr->wait_for_work(lock, dns_cv);
-    }
+    store_ptr->wait_for_work(dns_cv, dns_mutex);
 
     if (shutdown)
       return;

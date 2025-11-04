@@ -86,8 +86,8 @@ public:
   std::string get_status() const;
 
   // Wait for new unresolved IPs (blocks until notified or timeout)
-  void wait_for_work(std::unique_lock<std::mutex> &lock,
-                     std::condition_variable &cv) const;
+  // Takes ownership of the condition variable to wait on
+  void wait_for_work(std::condition_variable &cv, std::mutex &cv_mutex) const;
 
   // Notify waiting threads that new endpoints have been added
   void notify_new_endpoints(std::condition_variable &cv);
