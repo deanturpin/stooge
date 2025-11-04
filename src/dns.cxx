@@ -6,7 +6,6 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <cstring>
 #include <format>
 #include <future>
 #include <memory>

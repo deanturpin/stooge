@@ -48,16 +48,14 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
-#include <map>
 #include <memory>
-#include <netinet/if_ether.h>
+#include <net/ethernet.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <optional>
 #include <pcap/pcap.h>
 #include <print>
-#include <set>
 #include <string>
 #include <thread>
 

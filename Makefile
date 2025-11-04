@@ -33,13 +33,9 @@ live: build
 	@echo "Starting live capture (requires sudo/elevated privileges)..."
 	docker run --rm -it --cap-add=NET_ADMIN --cap-add=NET_RAW --net=host $(IMAGE)
 
-# Run tests (not yet implemented)
-test:
-	@echo "Tests not yet implemented"
-
 # Remove Docker image
 clean:
-	docker rmi $(IMAGE) 2>/dev/null || true
+	docker rmi $(IMAGE) || true
 
 # Kill all running stooge containers
 kill:

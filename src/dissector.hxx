@@ -2,16 +2,13 @@
 #pragma once
 
 extern "C" {
-#include <lauxlib.h>
 #include <lua.h>
-#include <lualib.h>
 }
 
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace dissector {
 

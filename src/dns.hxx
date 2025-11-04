@@ -2,8 +2,6 @@
 #pragma once
 
 #include <memory>
-#include <string>
-#include <string_view>
 
 namespace tui {
 class data_store;

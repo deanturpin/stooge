@@ -1,7 +1,11 @@
 // Dissector runtime implementation
 #include "dissector.hxx"
-#include <cstring>
 #include <print>
+
+extern "C" {
+#include <lauxlib.h>
+#include <lualib.h>
+}
 
 namespace dissector {
 
