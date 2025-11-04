@@ -88,19 +88,15 @@ size_t data_store::get_total_packets() const {
   return total_packets_.load();
 }
 
-void data_store::set_capture_time(std::chrono::steady_clock::time_point start,
-                                  double current_seconds) {
-  auto lock = std::scoped_lock{mutex_};
-  capture_start_ = start;
-  current_packet_time_ = current_seconds;
-  is_live_capture_ = (current_seconds == 0.0); // Live if time is 0
+void data_store::set_capture_time(double current_seconds) {
+  // Atomic writes - no lock needed
+  current_packet_time_.store(current_seconds);
+  is_live_capture_.store(current_seconds == 0.0); // Live if time is 0
 }
 
 std::string data_store::get_time_display() const {
-  auto lock = std::scoped_lock{mutex_};
-
-  // Show timestamp from most recent packet
-  auto total_seconds = static_cast<int>(current_packet_time_);
+  // Atomic read - no lock needed
+  auto total_seconds = static_cast<int>(current_packet_time_.load());
   auto hours = total_seconds / 3600;
   auto minutes = (total_seconds % 3600) / 60;
   auto seconds = total_seconds % 60;
@@ -108,8 +104,8 @@ std::string data_store::get_time_display() const {
 }
 
 bool data_store::is_live() const {
-  auto lock = std::scoped_lock{mutex_};
-  return is_live_capture_;
+  // Atomic read - no lock needed
+  return is_live_capture_.load();
 }
 
 std::vector<std::string> data_store::get_unresolved_ips() const {

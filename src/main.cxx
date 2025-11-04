@@ -452,7 +452,7 @@ int main(int argc, char *argv[]) {
 
     // Update TUI clock with current timing
     if (start_time)
-      tui_store->set_capture_time(*start_time, packet_offset);
+      tui_store->set_capture_time(packet_offset);
 
     // Parse and display packet information
     auto info = parse_packet(packet, header);
