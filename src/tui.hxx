@@ -19,27 +19,27 @@ namespace tui {
 
 // Endpoint information with packet statistics
 struct endpoint_stats {
-  std::string ip;
-  uint16_t port;
-  std::string protocol;
-  std::string hostname;    // Cached DNS lookup
-  std::string vendor;      // MAC vendor
-  std::string mac_address; // MAC address (formatted as XX:XX:XX:XX:XX:XX)
-  size_t packet_count = 0uz;
-  std::chrono::steady_clock::time_point last_seen;
+  std::string ip_;
+  uint16_t port_;
+  std::string protocol_;
+  std::string hostname_;    // Cached DNS lookup
+  std::string vendor_;      // MAC vendor
+  std::string mac_address_; // MAC address (formatted as XX:XX:XX:XX:XX:XX)
+  size_t packet_count_ = 0uz;
+  std::chrono::steady_clock::time_point last_seen_;
 
   std::string to_string() const;
 };
 
 // Packet information for display
 struct packet_entry {
-  size_t number;
-  double timestamp;     // Seconds from start (0 for live mode)
-  std::string protocol; // TCP, UDP, etc.
-  std::string src;      // Source IP:port with hostname
-  std::string dst;      // Dest IP:port with hostname
-  size_t bytes;
-  std::string dissection; // Optional protocol dissection info
+  size_t number_;
+  double timestamp_;     // Seconds from start (0 for live mode)
+  std::string protocol_; // TCP, UDP, etc.
+  std::string src_;      // Source IP:port with hostname
+  std::string dst_;      // Dest IP:port with hostname
+  size_t bytes_;
+  std::string dissection_; // Optional protocol dissection info
 };
 
 // Thread-safe data store for TUI

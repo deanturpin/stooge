@@ -13,16 +13,17 @@ namespace tui {
 
 std::string endpoint_stats::to_string() const {
   // Format: IP:port Protocol MAC Vendor Hostname Pkts
-  auto ip_port = std::string{port > 0 ? std::format("{}:{}", ip, port) : ip};
-  auto mac_str = std::string{mac_address.empty() ? "-" : mac_address};
-  auto vendor_str = std::string{vendor.empty() ? "-" : vendor};
+  auto ip_port =
+      std::string{port_ > 0 ? std::format("{}:{}", ip_, port_) : ip_};
+  auto mac_str = std::string{mac_address_.empty() ? "-" : mac_address_};
+  auto vendor_str = std::string{vendor_.empty() ? "-" : vendor_};
   auto host_str =
-      std::string{hostname.empty() || hostname == ip ? "-" : hostname};
+      std::string{hostname_.empty() || hostname_ == ip_ ? "-" : hostname_};
 
   return std::format("{:21} {:8} {:17} {:20} {:30} {:5}", ip_port.substr(0, 21),
-                     protocol.substr(0, 8), mac_str.substr(0, 17),
+                     protocol_.substr(0, 8), mac_str.substr(0, 17),
                      vendor_str.substr(0, 20), host_str.substr(0, 30),
-                     packet_count);
+                     packet_count_);
 }
 
 // data_store implementation
@@ -35,17 +36,17 @@ void data_store::add_endpoint(std::string_view ip, uint16_t port,
   auto key = std::string{std::format("{}:{}:{}", ip, port, protocol)};
 
   auto &ep = endpoints_[key];
-  ep.ip = ip;
-  ep.port = port;
-  ep.protocol = protocol;
+  ep.ip_ = ip;
+  ep.port_ = port;
+  ep.protocol_ = protocol;
   if (!hostname.empty())
-    ep.hostname = hostname;
+    ep.hostname_ = hostname;
   if (!vendor.empty())
-    ep.vendor = vendor;
+    ep.vendor_ = vendor;
   if (!mac_address.empty())
-    ep.mac_address = mac_address;
-  ep.packet_count++;
-  ep.last_seen = std::chrono::steady_clock::now();
+    ep.mac_address_ = mac_address;
+  ep.packet_count_++;
+  ep.last_seen_ = std::chrono::steady_clock::now();
 }
 
 void data_store::add_packet(const packet_entry &entry) {
@@ -66,7 +67,7 @@ std::vector<endpoint_stats> data_store::get_endpoints() const {
 
   // Sort by packet count (descending)
   std::sort(result.begin(), result.end(), [](const auto &a, const auto &b) {
-    return a.packet_count > b.packet_count;
+    return a.packet_count_ > b.packet_count_;
   });
 
   return result;
@@ -115,9 +116,9 @@ std::vector<std::string> data_store::get_unresolved_ips() const {
   // Collect unique IPs that don't have hostnames yet
   auto seen_ips = std::set<std::string>{};
   for (const auto &[key, ep] : endpoints_) {
-    if (ep.hostname.empty() && !seen_ips.contains(ep.ip)) {
-      unresolved.push_back(ep.ip);
-      seen_ips.insert(ep.ip);
+    if (ep.hostname_.empty() && !seen_ips.contains(ep.ip_)) {
+      unresolved.push_back(ep.ip_);
+      seen_ips.insert(ep.ip_);
     }
   }
 
@@ -130,8 +131,8 @@ void data_store::update_hostname(std::string_view ip,
 
   // Update all endpoints with this IP address
   for (auto &[key, ep] : endpoints_) {
-    if (ep.ip == ip)
-      ep.hostname = hostname;
+    if (ep.ip_ == ip)
+      ep.hostname_ = hostname;
   }
 }
 
@@ -251,9 +252,9 @@ void renderer::render_loop() {
     for (const auto &ep : endpoints) {
       auto ep_text = text(ep.to_string());
       // Colourize by protocol
-      if (ep.protocol == "TCP")
+      if (ep.protocol_ == "TCP")
         ep_text = ep_text | color(Color::Green);
-      else if (ep.protocol == "UDP")
+      else if (ep.protocol_ == "UDP")
         ep_text = ep_text | color(Color::Yellow);
       else
         ep_text = ep_text | color(Color::White);
@@ -285,13 +286,13 @@ void renderer::render_loop() {
 
     for (const auto &pkt : packets) {
       auto pkt_line =
-          text(std::format("{:<8d} {:<8} {:<22} {:<22} {:<10}", pkt.number,
-                           pkt.protocol, pkt.src, pkt.dst, pkt.bytes));
+          text(std::format("{:<8d} {:<8} {:<22} {:<22} {:<10}", pkt.number_,
+                           pkt.protocol_, pkt.src_, pkt.dst_, pkt.bytes_));
 
       // Colourize by protocol
-      if (pkt.protocol == "TCP")
+      if (pkt.protocol_ == "TCP")
         pkt_line = pkt_line | color(Color::Green);
-      else if (pkt.protocol == "UDP")
+      else if (pkt.protocol_ == "UDP")
         pkt_line = pkt_line | color(Color::Yellow);
       else
         pkt_line = pkt_line | color(Color::White);
@@ -299,8 +300,8 @@ void renderer::render_loop() {
       packet_elements.push_back(pkt_line);
 
       // Add dissection info if present
-      if (!pkt.dissection.empty()) {
-        packet_elements.push_back(text("  └─ " + pkt.dissection) |
+      if (!pkt.dissection_.empty()) {
+        packet_elements.push_back(text("  └─ " + pkt.dissection_) |
                                   color(Color::Magenta));
       }
     }

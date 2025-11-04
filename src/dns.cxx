@@ -60,25 +60,42 @@ std::string resolve_with_timeout(std::string_view ip) {
 // DNS resolution thread function
 void dns_resolver_thread() {
   auto resolved_ips = std::set<std::string>{};
+  auto iteration_count = 0uz;
 
   while (!shutdown) {
+    iteration_count++;
+
+    // Safety check: ensure store is still valid
+    if (store_ptr == nullptr)
+      return;
+
+    store_ptr->set_status(std::format("DNS: Waiting for work (iteration {})...",
+                                      iteration_count));
+
     // Wait for work (new endpoints or timeout)
     store_ptr->wait_for_work(dns_cv, dns_mutex);
 
-    if (shutdown)
+    // Check again after waking - store could have been reset during shutdown
+    if (shutdown || store_ptr == nullptr)
       return;
+
+    store_ptr->set_status(
+        std::format("DNS: Woke up (iteration {})", iteration_count));
 
     // Get list of IPs that need resolution
     auto unresolved = store_ptr->get_unresolved_ips();
 
-    // Show progress if there are IPs to resolve
-    if (!unresolved.empty())
-      store_ptr->set_status(
-          std::format("DNS: {} unresolved", unresolved.size()));
+    // Show detailed progress
+    store_ptr->set_status(
+        std::format("DNS: Found {} unresolved IPs, {} already tried (iter {})",
+                    unresolved.size(), resolved_ips.size(), iteration_count));
 
     // Count how many from this batch still need resolution
     auto unresolved_count = std::ranges::count_if(
         unresolved, [&](const auto &ip) { return !resolved_ips.contains(ip); });
+
+    store_ptr->set_status(std::format("DNS: {} new IPs to resolve (iter {})",
+                                      unresolved_count, iteration_count));
 
     // Resolve each IP that hasn't been resolved yet
     for (const auto &ip : unresolved) {
@@ -86,15 +103,26 @@ void dns_resolver_thread() {
         return;
 
       // Skip if we've already tried to resolve this IP
-      if (resolved_ips.contains(ip))
+      if (resolved_ips.contains(ip)) {
+        store_ptr->set_status(
+            std::format("DNS: Skipping {} (already tried)", ip));
         continue;
+      }
 
-      // Update status bar with current resolution
-      store_ptr->set_status(std::format("DNS: Resolving {} ({} remaining)", ip,
-                                        unresolved_count));
+      // Update status bar with current resolution - show detailed timing
+      store_ptr->set_status(
+          std::format("DNS: START resolving {} ({} remain, {} tried total)", ip,
+                      unresolved_count, resolved_ips.size()));
 
       // Resolve DNS with 2 second timeout
       auto hostname = resolve_with_timeout(ip);
+
+      // Show result immediately
+      if (!hostname.empty())
+        store_ptr->set_status(
+            std::format("DNS: SUCCESS {} -> {}", ip, hostname));
+      else
+        store_ptr->set_status(std::format("DNS: TIMEOUT/FAIL {}", ip));
 
       // Update all endpoints with this IP (use IP itself for failed lookups)
       if (!hostname.empty())
@@ -105,11 +133,14 @@ void dns_resolver_thread() {
       // Mark as resolved (even if it failed, don't retry)
       resolved_ips.insert(ip);
       unresolved_count--;
+
+      store_ptr->set_status(std::format("DNS: Marked {} as resolved", ip));
     }
 
     // Clear status when all done
-    if (unresolved.empty() || resolved_ips.size() == unresolved.size())
-      store_ptr->set_status("");
+    store_ptr->set_status(
+        std::format("DNS: Cycle complete - {} total tried (iter {})",
+                    resolved_ips.size(), iteration_count));
   }
 }
 } // anonymous namespace

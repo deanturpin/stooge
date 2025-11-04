@@ -17,14 +17,14 @@ namespace dissector {
 
 // Dissected protocol information returned from dissector
 struct result {
-  std::string protocol;
-  std::string info; // Summary line for display
+  std::string protocol_;
+  std::string info_; // Summary line for display
 };
 
 // Runtime for executing protocol dissectors
 class runtime {
 private:
-  lua_State *L = nullptr;
+  lua_State *L_ = nullptr;
 
 public:
   runtime();

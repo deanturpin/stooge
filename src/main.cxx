@@ -143,16 +143,16 @@ std::string port_to_service(uint16_t port) {
 
 // Parsed network packet metadata
 struct packet_info {
-  std::string src_ip;
-  std::string dst_ip;
-  std::array<uint8_t, 6> src_mac{};
-  std::array<uint8_t, 6> dst_mac{};
-  uint16_t src_port = 0;
-  uint16_t dst_port = 0;
-  std::string protocol;
-  size_t length = 0uz;
-  const uint8_t *payload = nullptr; // Application-layer payload
-  size_t payload_length = 0uz;
+  std::string src_ip_;
+  std::string dst_ip_;
+  std::array<uint8_t, 6> src_mac_{};
+  std::array<uint8_t, 6> dst_mac_{};
+  uint16_t src_port_ = 0;
+  uint16_t dst_port_ = 0;
+  std::string protocol_;
+  size_t length_ = 0uz;
+  const uint8_t *payload_ = nullptr; // Application-layer payload
+  size_t payload_length_ = 0uz;
 };
 
 // Parse raw packet data into structured packet_info
@@ -172,8 +172,8 @@ std::optional<packet_info> parse_packet(const u_char *packet,
   auto info = packet_info{};
 
   // Extract MAC addresses
-  std::memcpy(info.src_mac.data(), eth->ether_shost, 6);
-  std::memcpy(info.dst_mac.data(), eth->ether_dhost, 6);
+  std::memcpy(info.src_mac_.data(), eth->ether_shost, 6);
+  std::memcpy(info.dst_mac_.data(), eth->ether_dhost, 6);
 
   auto iph =
       reinterpret_cast<const struct ip *>(packet + sizeof(struct ether_header));
@@ -186,9 +186,9 @@ std::optional<packet_info> parse_packet(const u_char *packet,
   auto dst_ip = std::array<char, INET_ADDRSTRLEN>{};
   inet_ntop(AF_INET, &(iph->ip_src), src_ip.data(), INET_ADDRSTRLEN);
   inet_ntop(AF_INET, &(iph->ip_dst), dst_ip.data(), INET_ADDRSTRLEN);
-  info.src_ip = src_ip.data();
-  info.dst_ip = dst_ip.data();
-  info.length = header->len;
+  info.src_ip_ = src_ip.data();
+  info.dst_ip_ = dst_ip.data();
+  info.length_ = header->len;
 
   // Extract TCP port numbers and payload if available
   if (iph->ip_p == IPPROTO_TCP) {
@@ -197,9 +197,9 @@ std::optional<packet_info> parse_packet(const u_char *packet,
         packet + sizeof(struct ether_header) + ip_header_len);
     if (header->caplen >=
         sizeof(struct ether_header) + ip_header_len + sizeof(struct tcphdr)) {
-      info.protocol = "TCP";
-      info.src_port = ntohs(tcph->th_sport);
-      info.dst_port = ntohs(tcph->th_dport);
+      info.protocol_ = "TCP";
+      info.src_port_ = ntohs(tcph->th_sport);
+      info.dst_port_ = ntohs(tcph->th_dport);
 
       // Calculate TCP header length (data offset is in 32-bit words)
       auto tcp_header_len = tcph->th_off * 4;
@@ -207,8 +207,8 @@ std::optional<packet_info> parse_packet(const u_char *packet,
           sizeof(struct ether_header) + sizeof(struct ip) + tcp_header_len;
 
       if (header->caplen > payload_offset) {
-        info.payload = packet + payload_offset;
-        info.payload_length = header->caplen - payload_offset;
+        info.payload_ = packet + payload_offset;
+        info.payload_length_ = header->caplen - payload_offset;
       }
     }
   } else if (iph->ip_p == IPPROTO_UDP) {
@@ -218,21 +218,21 @@ std::optional<packet_info> parse_packet(const u_char *packet,
         packet + sizeof(struct ether_header) + ip_header_len);
     if (header->caplen >=
         sizeof(struct ether_header) + ip_header_len + sizeof(struct udphdr)) {
-      info.protocol = "UDP";
-      info.src_port = ntohs(udph->uh_sport);
-      info.dst_port = ntohs(udph->uh_dport);
+      info.protocol_ = "UDP";
+      info.src_port_ = ntohs(udph->uh_sport);
+      info.dst_port_ = ntohs(udph->uh_dport);
 
       auto payload_offset =
           sizeof(struct ether_header) + ip_header_len + sizeof(struct udphdr);
 
       if (header->caplen > payload_offset) {
-        info.payload = packet + payload_offset;
-        info.payload_length = header->caplen - payload_offset;
+        info.payload_ = packet + payload_offset;
+        info.payload_length_ = header->caplen - payload_offset;
       }
     }
   } else {
     // Other IP protocols (ICMP, etc.)
-    info.protocol = "IP";
+    info.protocol_ = "IP";
   }
 
   return info;
@@ -406,6 +406,7 @@ int main(int argc, char *argv[]) {
 
     if (capture_result == -2)
       break; // End of file (normal for replay mode)
+
     packet_count++;
 
     // Periodic status updates every 100 packets to track progress
@@ -459,23 +460,23 @@ int main(int argc, char *argv[]) {
     if (info) {
       // Add endpoint information to TUI
       // Note: DNS resolution happens in background thread
-      auto src_vendor = oui::lookup_vendor(info->src_mac);
-      auto dst_vendor = oui::lookup_vendor(info->dst_mac);
+      auto src_vendor = oui::lookup_vendor(info->src_mac_);
+      auto dst_vendor = oui::lookup_vendor(info->dst_mac_);
 
       // Format MAC addresses
       auto src_mac_str =
           std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-                      info->src_mac[0], info->src_mac[1], info->src_mac[2],
-                      info->src_mac[3], info->src_mac[4], info->src_mac[5]);
+                      info->src_mac_[0], info->src_mac_[1], info->src_mac_[2],
+                      info->src_mac_[3], info->src_mac_[4], info->src_mac_[5]);
       auto dst_mac_str =
           std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-                      info->dst_mac[0], info->dst_mac[1], info->dst_mac[2],
-                      info->dst_mac[3], info->dst_mac[4], info->dst_mac[5]);
+                      info->dst_mac_[0], info->dst_mac_[1], info->dst_mac_[2],
+                      info->dst_mac_[3], info->dst_mac_[4], info->dst_mac_[5]);
 
-      tui_store->add_endpoint(info->src_ip, info->src_port, info->protocol, "",
-                              src_vendor, src_mac_str);
-      tui_store->add_endpoint(info->dst_ip, info->dst_port, info->protocol, "",
-                              dst_vendor, dst_mac_str);
+      tui_store->add_endpoint(info->src_ip_, info->src_port_, info->protocol_,
+                              "", src_vendor, src_mac_str);
+      tui_store->add_endpoint(info->dst_ip_, info->dst_port_, info->protocol_,
+                              "", dst_vendor, dst_mac_str);
 
       // Notify DNS thread that new endpoints may need resolution
       dns::notify_new_work();
@@ -494,36 +495,36 @@ int main(int argc, char *argv[]) {
       };
 
       auto pkt = tui::packet_entry{};
-      pkt.number = packet_count;
-      pkt.timestamp = packet_offset;
-      pkt.protocol = info->protocol;
-      pkt.src = format_endpoint(info->src_ip, info->src_port);
-      pkt.dst = format_endpoint(info->dst_ip, info->dst_port);
-      pkt.bytes = info->length;
+      pkt.number_ = packet_count;
+      pkt.timestamp_ = packet_offset;
+      pkt.protocol_ = info->protocol_;
+      pkt.src_ = format_endpoint(info->src_ip_, info->src_port_);
+      pkt.dst_ = format_endpoint(info->dst_ip_, info->dst_port_);
+      pkt.bytes_ = info->length_;
 
       // Try to dissect application-layer protocol
-      if (info->payload && info->payload_length > 0) {
-        auto dissected =
-            dissectors.dissect(info->payload, info->payload_length,
-                               info->src_port, info->dst_port, info->protocol);
+      if (info->payload_ && info->payload_length_ > 0) {
+        auto dissected = dissectors.dissect(
+            info->payload_, info->payload_length_, info->src_port_,
+            info->dst_port_, info->protocol_);
         if (dissected)
-          pkt.dissection =
-              std::format("{} {}", dissected->protocol, dissected->info);
+          pkt.dissection_ =
+              std::format("{} {}", dissected->protocol_, dissected->info_);
       }
 
       // Show last packet details every 500 packets
       if (use_tui && packet_count % 500 == 0)
         tui_store->set_status(std::format("Last packet: {} {} → {}",
-                                          pkt.protocol, pkt.src, pkt.dst));
+                                          pkt.protocol_, pkt.src_, pkt.dst_));
 
       tui_store->add_packet(pkt);
 
       // Print text output if TUI is disabled
       if (!use_tui) {
-        std::print("[{}] {} {} → {} ({} bytes)", pkt.number, pkt.protocol,
-                   pkt.src, pkt.dst, pkt.bytes);
-        if (!pkt.dissection.empty())
-          std::print(" | {}", pkt.dissection);
+        std::print("[{}] {} {} → {} ({} bytes)", pkt.number_, pkt.protocol_,
+                   pkt.src_, pkt.dst_, pkt.bytes_);
+        if (!pkt.dissection_.empty())
+          std::print(" | {}", pkt.dissection_);
         std::print("\n");
       }
     }
