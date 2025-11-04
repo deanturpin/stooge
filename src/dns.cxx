@@ -1,6 +1,7 @@
 // DNS reverse lookup with async resolution working on endpoint map
 #include "dns.hxx"
 #include "tui.hxx"
+#include <algorithm>
 #include <arpa/inet.h>
 #include <atomic>
 #include <chrono>
@@ -63,10 +64,13 @@ void dns_resolver_thread() {
     auto unresolved = store_ptr->get_unresolved_ips();
 
     // Show progress if there are IPs to resolve
-    if (!unresolved.empty()) {
+    if (!unresolved.empty())
       store_ptr->set_status(
           std::format("DNS: {} unresolved", unresolved.size()));
-    }
+
+    // Count how many from this batch still need resolution
+    auto unresolved_count = std::ranges::count_if(
+        unresolved, [&](const auto &ip) { return !resolved_ips.contains(ip); });
 
     // Resolve each IP that hasn't been resolved yet
     for (const auto &ip : unresolved) {
@@ -78,9 +82,8 @@ void dns_resolver_thread() {
         continue;
 
       // Update status bar with current resolution
-      store_ptr->set_status(
-          std::format("DNS: Resolving {} ({} remaining)", ip,
-                      unresolved.size() - resolved_ips.size()));
+      store_ptr->set_status(std::format("DNS: Resolving {} ({} remaining)", ip,
+                                        unresolved_count));
 
       // Resolve DNS with 2 second timeout
       auto hostname = resolve_with_timeout(ip);
@@ -91,6 +94,7 @@ void dns_resolver_thread() {
 
       // Mark as resolved (even if it failed, don't retry)
       resolved_ips.insert(ip);
+      unresolved_count--;
     }
 
     // Clear status when all done
