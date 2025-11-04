@@ -283,39 +283,8 @@ int main(int argc, char *argv[]) {
     // Live mode - capture from default interface
     live_mode = true;
 
-    // On Linux, use "any" pseudo-device to capture from all interfaces
-    // On macOS, find best network interface (prefer en0)
-    std::string dev_name = "any"; // Default to Linux "any" device
-
-#ifdef __APPLE__
-    // macOS doesn't support "any" device, so find best interface
-    pcap_if_t *alldevs = nullptr;
-    if (pcap_findalldevs(&alldevs, errbuf.data()) == -1 || !alldevs) {
-      std::print("Error finding network interfaces: {}\n", errbuf.data());
-      std::print("Try specifying a file: {} <pcap-file>\n", argv[0]);
-      return 1;
-    }
-
-    // Try to find en0 (macOS Wi-Fi), otherwise use first non-loopback
-    dev_name.clear();
-    for (auto d = alldevs; d != nullptr; d = d->next) {
-      if (std::string{d->name} == "en0") {
-        dev_name = d->name;
-        break;
-      }
-      if (dev_name.empty() && std::string{d->name} != "lo" &&
-          std::string{d->name} != "lo0")
-        dev_name = d->name; // Fallback to first non-loopback
-    }
-
-    if (dev_name.empty()) {
-      std::print("No suitable network interface found\n");
-      pcap_freealldevs(alldevs);
-      return 1;
-    }
-
-    pcap_freealldevs(alldevs);
-#endif
+    // Use "any" pseudo-device to capture from all interfaces
+    auto dev_name = std::string{"any"};
 
     // Open live capture
     handle.reset(
