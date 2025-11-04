@@ -5,6 +5,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -125,6 +126,9 @@ public:
   // Check if renderer is running
   bool is_running() const;
 
+  // Set callback for when user quits (presses q/Esc)
+  void set_quit_callback(std::function<void()> callback);
+
 private:
   std::shared_ptr<data_store> store_;
   std::atomic<bool> running_{false};
@@ -140,6 +144,9 @@ private:
   size_t spinner_frame_ = 0uz;
   static constexpr std::array<const char *, 8> SPINNER_FRAMES = {
       "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"};
+
+  // Callback invoked when user quits
+  std::function<void()> quit_callback_;
 
   void render_loop();
   void set_status(std::string_view message);

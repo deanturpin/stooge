@@ -343,6 +343,9 @@ int main(int argc, char *argv[]) {
     tui_renderer = std::make_unique<tui::renderer>(tui_store);
     global_renderer.store(tui_renderer.get());
 
+    // Set quit callback to stop packet capture when user presses q/Esc
+    tui_renderer->set_quit_callback([&]() { stop_capture = 1; });
+
     // Start TUI renderer - this will take over the screen
     // Wrap in try-catch to handle terminal/TTY errors gracefully
     try {

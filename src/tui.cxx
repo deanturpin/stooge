@@ -206,6 +206,10 @@ void renderer::set_status(std::string_view message) {
   status_message_ = message;
 }
 
+void renderer::set_quit_callback(std::function<void()> callback) {
+  quit_callback_ = std::move(callback);
+}
+
 void renderer::render_loop() {
   using namespace ftxui;
 
@@ -357,6 +361,9 @@ void renderer::render_loop() {
          event.input() == "\x03")) {
       running_ = false;
       screen.Exit();
+      // Invoke quit callback to signal main loop to exit
+      if (quit_callback_)
+        quit_callback_();
       return true;
     }
 
