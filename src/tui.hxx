@@ -78,6 +78,12 @@ public:
   // Update hostname for a specific IP address across all endpoints
   void update_hostname(std::string_view ip, std::string_view hostname);
 
+  // Set status message (e.g., "Resolving <IP>")
+  void set_status(std::string_view message);
+
+  // Get current status message
+  std::string get_status() const;
+
 private:
   mutable std::mutex mutex_;
   std::map<std::string, endpoint_stats> endpoints_; // Key: "ip:port:protocol"
@@ -90,6 +96,9 @@ private:
   double current_packet_time_ =
       0.0; // Seconds from PCAP start or elapsed live time
   bool is_live_capture_ = false;
+
+  // Status message (e.g., DNS resolution progress)
+  std::string status_message_;
 };
 
 // Main TUI renderer - manages screen updates

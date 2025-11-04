@@ -139,6 +139,16 @@ void data_store::update_hostname(std::string_view ip,
   }
 }
 
+void data_store::set_status(std::string_view message) {
+  auto lock = std::scoped_lock{mutex_};
+  status_message_ = message;
+}
+
+std::string data_store::get_status() const {
+  auto lock = std::scoped_lock{mutex_};
+  return status_message_;
+}
+
 // renderer implementation
 renderer::renderer(std::shared_ptr<data_store> store) : store_(store) {}
 
@@ -278,16 +288,21 @@ void renderer::render_loop() {
     auto packet_pane = vbox(packet_elements) | vscroll_indicator | frame | flex;
 
     // Status bar with shortcuts hint and status message
+    // Check DNS status from data_store first, then renderer status
+    auto dns_status = store_->get_status();
     auto status_msg = std::string{};
     {
       auto lock = std::scoped_lock{status_mutex_};
       status_msg = status_message_;
     }
 
+    // Prioritise DNS status over renderer status
+    auto final_status = !dns_status.empty() ? dns_status : status_msg;
+
     auto status_bar = Element{};
-    if (!status_msg.empty()) {
-      // Show status message when present
-      status_bar = hbox({text(status_msg) | bold | color(Color::Yellow)}) |
+    if (!final_status.empty()) {
+      // Show status message when present (DNS or renderer)
+      status_bar = hbox({text(final_status) | bold | color(Color::Yellow)}) |
                    bgcolor(Color::GrayDark);
     } else {
       // Show shortcuts when no status message

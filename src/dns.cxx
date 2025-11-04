@@ -2,9 +2,12 @@
 #include "dns.hxx"
 #include "tui.hxx"
 #include <arpa/inet.h>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
+#include <format>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <netdb.h>
@@ -37,6 +40,20 @@ std::string resolve_blocking(std::string_view ip) {
   return hostname;
 }
 
+// Resolve DNS with timeout (2 second limit)
+std::string resolve_with_timeout(std::string_view ip) {
+  // Launch async DNS lookup
+  auto future =
+      std::async(std::launch::async, [ip] { return resolve_blocking(ip); });
+
+  // Wait for result with 2 second timeout
+  if (future.wait_for(2s) == std::future_status::ready)
+    return future.get();
+
+  // Timeout - return empty string
+  return {};
+}
+
 // DNS resolution thread function
 void dns_resolver_thread() {
   auto resolved_ips = std::set<std::string>{};
@@ -54,8 +71,11 @@ void dns_resolver_thread() {
       if (resolved_ips.contains(ip))
         continue;
 
-      // Resolve DNS (this blocks)
-      auto hostname = resolve_blocking(ip);
+      // Update status bar with current resolution
+      store_ptr->set_status(std::format("Resolving {}", ip));
+
+      // Resolve DNS with 2 second timeout
+      auto hostname = resolve_with_timeout(ip);
 
       // Update all endpoints with this IP
       if (!hostname.empty())
@@ -63,6 +83,9 @@ void dns_resolver_thread() {
 
       // Mark as resolved (even if it failed, don't retry)
       resolved_ips.insert(ip);
+
+      // Clear status after resolution
+      store_ptr->set_status("");
     }
 
     // Sleep before next scan

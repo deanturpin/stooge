@@ -154,35 +154,6 @@ struct packet_info {
   size_t length = 0uz;
   const uint8_t *payload = nullptr; // Application-layer payload
   size_t payload_length = 0uz;
-
-  // Format packet information as human-readable string with hostnames
-  std::string describe() const {
-    auto src_host = dns::reverse_lookup(src_ip);
-    auto dst_host = dns::reverse_lookup(dst_ip);
-
-    // Helper to format IP:port with optional hostname and service
-    auto format_endpoint = [](std::string_view ip, uint16_t port,
-                              std::string_view host) {
-      if (port == 0)
-        return host.empty() || host == ip ? std::string{ip}
-                                          : std::format("{} ({})", ip, host);
-
-      auto service = port_to_service(port);
-
-      // Build port display: "80/HTTP" or just "80"
-      auto port_display = service.empty() ? std::format("{}", port)
-                                          : std::format("{}/{}", port, service);
-
-      return !host.empty() && host != ip
-                 ? std::format("{}:{} ({})", ip, port_display, host)
-                 : std::format("{}:{}", ip, port_display);
-    };
-
-    auto src = format_endpoint(src_ip, src_port, src_host);
-    auto dst = format_endpoint(dst_ip, dst_port, dst_host);
-
-    return std::format("{} {} → {} ({} bytes)", protocol, src, dst, length);
-  }
 };
 
 // Parse raw packet data into structured packet_info
@@ -267,59 +238,6 @@ std::optional<packet_info> parse_packet(const u_char *packet,
 
   return info;
 }
-
-// Network endpoint for connection tracking (currently unused)
-struct endpoint {
-  std::string ip;
-  uint16_t port;
-  std::string protocol;
-  mutable std::string hostname; // Cached hostname, lazy-loaded
-
-  std::string to_string() const {
-    if (hostname.empty())
-      hostname = dns::reverse_lookup(ip);
-    return !hostname.empty() && hostname != ip
-               ? std::format("{}:{} ({}) [{}]", ip, port, protocol, hostname)
-               : std::format("{}:{} ({})", ip, port, protocol);
-  }
-
-  // Lexicographic ordering for std::set
-  constexpr bool operator<(const endpoint &other) const {
-    if (ip != other.ip)
-      return ip < other.ip;
-    if (port != other.port)
-      return port < other.port;
-    return protocol < other.protocol;
-  }
-};
-
-// Compile-time unit tests for endpoint comparison
-namespace {
-constexpr auto test_endpoint_ordering_by_ip() {
-  auto ep1 = endpoint{"192.168.1.1", 80, "TCP", ""};
-  auto ep2 = endpoint{"192.168.1.2", 80, "TCP", ""};
-  return ep1 < ep2; // Should be true (IP comparison)
-}
-
-constexpr auto test_endpoint_ordering_by_port() {
-  auto ep1 = endpoint{"192.168.1.1", 80, "TCP", ""};
-  auto ep2 = endpoint{"192.168.1.1", 443, "TCP", ""};
-  return ep1 < ep2; // Should be true (port comparison)
-}
-
-constexpr auto test_endpoint_ordering_by_protocol() {
-  auto ep1 = endpoint{"192.168.1.1", 80, "TCP", ""};
-  auto ep2 = endpoint{"192.168.1.1", 80, "UDP", ""};
-  return ep1 < ep2; // Should be true ("TCP" < "UDP")
-}
-
-static_assert(test_endpoint_ordering_by_ip(),
-              "Endpoint ordering by IP should work");
-static_assert(test_endpoint_ordering_by_port(),
-              "Endpoint ordering by port should work");
-static_assert(test_endpoint_ordering_by_protocol(),
-              "Endpoint ordering by protocol should work");
-} // namespace
 
 int main(int argc, char *argv[]) {
   // Disable stdout buffering for real-time output in Docker

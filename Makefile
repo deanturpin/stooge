@@ -1,7 +1,7 @@
 # Makefile for stooge - network traffic replayer
 # All builds run in Docker containers to ensure consistent environment
 
-.PHONY: all build run live test clean deploy format install kill-all
+.PHONY: all build run run-text run-quick live test clean deploy format install kill
 
 IMAGE := deanturpin/stooge
 
@@ -21,8 +21,12 @@ run:
 	docker run --rm -it -v $(PWD):/data $(IMAGE) /data/laptop.pcapng
 
 # Run container in text mode (no TTY required)
-run-text:
+text:
 	docker run --rm -v $(PWD):/data --entrypoint /app/build/stooge $(IMAGE) --no-tui /data/laptop.pcapng
+
+# Quick replay test in text mode (3 second timeout for rapid iteration)
+quick: build
+	timeout 100 docker run --rm -v $(PWD):/data --entrypoint /app/build/stooge $(IMAGE) --no-tui /data/laptop.pcapng || true
 
 # Run live capture (requires elevated privileges)
 live: build
