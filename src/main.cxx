@@ -350,7 +350,8 @@ int main(int argc, char *argv[]) {
     }
 
     // Set quit callback to stop packet capture when user presses q/Esc
-    tui_renderer->set_quit_callback([&]() { stop_capture = 1; });
+    // Capture nothing - stop_capture is a global, so no capture needed
+    tui_renderer->set_quit_callback([]() { stop_capture = 1; });
 
     // Start TUI renderer - this will take over the screen
     // Wrap in try-catch to handle terminal/TTY errors gracefully
