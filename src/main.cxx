@@ -403,6 +403,10 @@ int main(int argc, char *argv[]) {
       break; // End of file (normal for replay mode)
     packet_count++;
 
+    // Periodic status updates every 100 packets to track progress
+    if (use_tui && packet_count % 100 == 0)
+      tui_store->set_status(std::format("Processing packet {}", packet_count));
+
     auto packet_offset = 0.0;
 
     // Only do timing for replay mode
@@ -498,6 +502,11 @@ int main(int argc, char *argv[]) {
           pkt.dissection =
               std::format("{} {}", dissected->protocol, dissected->info);
       }
+
+      // Show last packet details every 500 packets
+      if (use_tui && packet_count % 500 == 0)
+        tui_store->set_status(std::format("Last packet: {} {} → {}",
+                                          pkt.protocol, pkt.src, pkt.dst));
 
       tui_store->add_packet(pkt);
 
