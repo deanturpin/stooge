@@ -1,5 +1,45 @@
 // Network traffic replayer - reads PCAP files and replays timing with DNS
 // resolution
+//
+// Threading Architecture (4 threads total):
+//
+// 1. Main Thread (packet processing)
+//    - Reads packets from PCAP file or live capture using libpcap
+//    - Parses packet headers (Ethernet, IP, TCP/UDP)
+//    - Extracts endpoint information (IP, port, protocol, MAC, vendor)
+//    - Updates data_store with packet and endpoint information
+//    - Respects original packet timing for realistic replay
+//    - In live mode: DNS disabled to prevent 24s hangs
+//    - In replay mode: DNS enabled, runs in background thread
+//
+// 2. DNS Resolver Thread (background hostname resolution - replay mode only)
+//    - Periodically scans data_store endpoint map for unresolved IPs
+//    - Performs reverse DNS lookups using getnameinfo() (blocking)
+//    - Updates all endpoints with resolved hostnames
+//    - Tracks resolved IPs to prevent duplicate lookups
+//    - Runs continuously until stop_resolver() is called
+//    - Not started in live capture mode to avoid DNS hangs
+//
+// 3. TUI Render Thread (terminal interface)
+//    - Manages FTXUI screen and component lifecycle
+//    - Renders endpoint list (left pane) and packet list (right pane)
+//    - Handles keyboard shortcuts (q/Esc=quit, p=pause, h=help)
+//    - Reads from data_store (thread-safe with mutexes)
+//    - Displays live capture vs PCAP replay mode indicator
+//    - Shows packet timestamp and total packet count
+//
+// 4. TUI Refresh Thread (periodic screen updates)
+//    - Wakes up every 100ms to trigger screen refresh
+//    - Posts custom event to FTXUI screen to redraw
+//    - Only refreshes when not paused
+//    - Ensures UI updates smoothly during packet processing
+//
+// Thread Safety:
+// - data_store uses std::mutex with std::scoped_lock for all operations
+// - DNS resolver thread safely reads and writes data_store
+// - TUI threads safely read data_store for rendering
+// - Signal handler safely stops TUI renderer
+//
 #include "dissector.hxx"
 #include "dns.hxx"
 #include "oui.hxx"
@@ -397,6 +437,10 @@ int main(int argc, char *argv[]) {
   auto tui_store = std::make_shared<tui::data_store>();
   std::unique_ptr<tui::renderer> tui_renderer;
 
+  // Start DNS resolver thread to work on endpoint map
+  if (!live_mode)
+    dns::start_resolver(tui_store);
+
   if (use_tui) {
     tui_renderer = std::make_unique<tui::renderer>(tui_store);
     global_renderer = tui_renderer.get();
@@ -487,11 +531,7 @@ int main(int argc, char *argv[]) {
     auto info = parse_packet(packet, header);
     if (info) {
       // Add endpoint information to TUI
-      // Skip DNS lookups in live mode - they're too slow and cause hangs
-      auto src_host =
-          live_mode ? std::string{} : dns::reverse_lookup(info->src_ip);
-      auto dst_host =
-          live_mode ? std::string{} : dns::reverse_lookup(info->dst_ip);
+      // Note: DNS resolution happens in background thread
       auto src_vendor = oui::lookup_vendor(info->src_mac);
       auto dst_vendor = oui::lookup_vendor(info->dst_mac);
 
@@ -505,34 +545,30 @@ int main(int argc, char *argv[]) {
                       info->dst_mac[0], info->dst_mac[1], info->dst_mac[2],
                       info->dst_mac[3], info->dst_mac[4], info->dst_mac[5]);
 
-      tui_store->add_endpoint(info->src_ip, info->src_port, info->protocol,
-                              src_host, src_vendor, src_mac_str);
-      tui_store->add_endpoint(info->dst_ip, info->dst_port, info->protocol,
-                              dst_host, dst_vendor, dst_mac_str);
+      tui_store->add_endpoint(info->src_ip, info->src_port, info->protocol, "",
+                              src_vendor, src_mac_str);
+      tui_store->add_endpoint(info->dst_ip, info->dst_port, info->protocol, "",
+                              dst_vendor, dst_mac_str);
 
       // Build packet entry
-      auto format_endpoint = [](std::string_view ip, uint16_t port,
-                                std::string_view host) {
+      auto format_endpoint = [](std::string_view ip, uint16_t port) {
         if (port == 0)
-          return host.empty() || host == ip ? std::string{ip}
-                                            : std::format("{} ({})", ip, host);
+          return std::string{ip};
 
         auto service = port_to_service(port);
         auto port_display = service.empty()
                                 ? std::format("{}", port)
                                 : std::format("{}/{}", port, service);
 
-        return !host.empty() && host != ip
-                   ? std::format("{}:{} ({})", ip, port_display, host)
-                   : std::format("{}:{}", ip, port_display);
+        return std::format("{}:{}", ip, port_display);
       };
 
       auto pkt = tui::packet_entry{};
       pkt.number = packet_count;
       pkt.timestamp = packet_offset;
       pkt.protocol = info->protocol;
-      pkt.src = format_endpoint(info->src_ip, info->src_port, src_host);
-      pkt.dst = format_endpoint(info->dst_ip, info->dst_port, dst_host);
+      pkt.src = format_endpoint(info->src_ip, info->src_port);
+      pkt.dst = format_endpoint(info->dst_ip, info->dst_port);
       pkt.bytes = info->length;
 
       // Try to dissect application-layer protocol
@@ -587,12 +623,8 @@ int main(int argc, char *argv[]) {
 
   std::print("Total packets processed: {}\n", packet_count);
 
-  // Wait for any remaining DNS lookups to complete
-  if (packet_count > 0) {
-    std::print("\nWaiting for DNS resolution to complete...\n");
-    dns::wait_for_resolution();
-    std::print("DNS resolution complete.\n");
-  }
+  // Stop DNS resolver thread
+  dns::stop_resolver();
 
   pcap_close(handle);
   return capture_result == -1 ? 1 : 0;

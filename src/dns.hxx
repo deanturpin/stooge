@@ -1,15 +1,18 @@
-// DNS reverse lookup with caching and async resolution
+// DNS reverse lookup with async resolution
 #pragma once
 
+#include <memory>
 #include <string>
 #include <string_view>
 
-namespace dns {
-// Perform reverse DNS lookup for an IP address
-// Returns hostname if found, empty string if lookup fails or not yet resolved
-// Automatically starts background resolution on first lookup
-std::string reverse_lookup(std::string_view ip);
+namespace tui {
+class data_store;
+}
 
-// Wait for all background DNS lookups to complete
-void wait_for_resolution();
+namespace dns {
+// Start DNS resolution thread that works on endpoint map
+void start_resolver(std::shared_ptr<tui::data_store> store);
+
+// Stop DNS resolution thread
+void stop_resolver();
 } // namespace dns

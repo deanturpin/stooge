@@ -72,6 +72,12 @@ public:
   // Check if we're in live capture mode
   bool is_live() const;
 
+  // Get list of IPs that need DNS resolution (empty hostname field)
+  std::vector<std::string> get_unresolved_ips() const;
+
+  // Update hostname for a specific IP address across all endpoints
+  void update_hostname(std::string_view ip, std::string_view hostname);
+
 private:
   mutable std::mutex mutex_;
   std::map<std::string, endpoint_stats> endpoints_; // Key: "ip:port:protocol"

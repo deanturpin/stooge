@@ -1,44 +1,25 @@
+// DNS reverse lookup with async resolution working on endpoint map
 #include "dns.hxx"
+#include "tui.hxx"
 #include <arpa/inet.h>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
-#include <map>
+#include <memory>
 #include <mutex>
 #include <netdb.h>
-#include <print>
-#include <queue>
+#include <set>
 #include <thread>
-#include <vector>
 
 using namespace std::chrono_literals;
 
 namespace dns {
 
 namespace {
-// Thread pool configuration constants
-constexpr auto MAX_WORKERS = 10;
-constexpr auto MIN_WORKERS = 1;
-constexpr auto MAX_REASONABLE_WORKERS = 1000;
-
-// Compile-time validation for worker pool configuration
-static_assert(MAX_WORKERS >= MIN_WORKERS, "Must have at least one worker");
-static_assert(MAX_WORKERS <= MAX_REASONABLE_WORKERS,
-              "Worker count seems unreasonable");
-static_assert(MAX_WORKERS > 0, "Worker count must be positive");
-static_assert(MIN_WORKERS > 0, "Minimum worker count must be positive");
-
-// Shared cache with mutex for thread-safe access
-auto cache = std::map<std::string, std::string>{};
-auto cache_mutex = std::mutex{};
-
-// Thread pool for DNS resolution
-auto workers = std::vector<std::thread>{};
-auto work_queue = std::queue<std::string>{};
-auto queue_mutex = std::mutex{};
-auto queue_cv = std::condition_variable{};
-auto shutdown = false;
-auto init_flag = std::once_flag{};
+// Single DNS resolution thread
+auto dns_thread = std::unique_ptr<std::thread>{};
+auto shutdown = std::atomic<bool>{false};
+auto store_ptr = std::shared_ptr<tui::data_store>{};
 
 // Perform blocking DNS lookup (internal helper)
 std::string resolve_blocking(std::string_view ip) {
@@ -56,95 +37,59 @@ std::string resolve_blocking(std::string_view ip) {
   return hostname;
 }
 
-// Worker thread function
-void worker_thread() {
-  while (true) {
-    auto ip = std::string{};
+// DNS resolution thread function
+void dns_resolver_thread() {
+  auto resolved_ips = std::set<std::string>{};
 
-    {
-      auto lock = std::unique_lock{queue_mutex};
-      queue_cv.wait(lock, []() { return shutdown || !work_queue.empty(); });
+  while (!shutdown) {
+    // Get list of IPs that need resolution
+    auto unresolved = store_ptr->get_unresolved_ips();
 
-      if (shutdown && work_queue.empty())
+    // Resolve each IP that hasn't been resolved yet
+    for (const auto &ip : unresolved) {
+      if (shutdown)
         return;
 
-      ip = work_queue.front();
-      work_queue.pop();
+      // Skip if we've already tried to resolve this IP
+      if (resolved_ips.contains(ip))
+        continue;
+
+      // Resolve DNS (this blocks)
+      auto hostname = resolve_blocking(ip);
+
+      // Update all endpoints with this IP
+      if (!hostname.empty())
+        store_ptr->update_hostname(ip, hostname);
+
+      // Mark as resolved (even if it failed, don't retry)
+      resolved_ips.insert(ip);
     }
 
-    // Resolve DNS (outside lock)
-    auto hostname = resolve_blocking(ip);
-
-    // Store result in cache
-    auto lock = std::scoped_lock{cache_mutex};
-    cache[ip] = hostname;
+    // Sleep before next scan
+    std::this_thread::sleep_for(1s);
   }
-}
-
-// Initialize thread pool (called once via std::call_once)
-void init_workers() {
-  for (auto i = 0; i < MAX_WORKERS; ++i)
-    workers.emplace_back(worker_thread);
 }
 } // anonymous namespace
 
-// Perform reverse DNS lookup for an IP address, with caching
-// Returns hostname if found, empty string if lookup fails or not yet resolved
-// Automatically starts background resolution on first lookup
-std::string reverse_lookup(std::string_view ip) {
+// Start DNS resolution thread that works on endpoint map
+void start_resolver(std::shared_ptr<tui::data_store> store) {
+  if (dns_thread)
+    return; // Already running
 
-  // Initialize worker threads first time only
-  std::call_once(init_flag, init_workers);
-
-  auto ip_str = std::string{ip};
-
-  {
-    auto lock = std::scoped_lock{cache_mutex};
-
-    // Return cached result if available
-    if (cache.contains(ip_str))
-      return cache[ip_str];
-
-    // Mark IP as being resolved (empty string in cache)
-    cache[ip_str] = {};
-  }
-
-  // Queue for background resolution
-  {
-    auto lock = std::scoped_lock{queue_mutex};
-    work_queue.push(ip_str);
-  }
-  queue_cv.notify_one();
-
-  // Return empty string for now (will be populated by background thread)
-  return {};
+  store_ptr = store;
+  shutdown = false;
+  dns_thread = std::make_unique<std::thread>(dns_resolver_thread);
 }
 
-// Wait for all background DNS lookups to complete
-void wait_for_resolution() {
-  // Wait for queue to drain
-  while (true) {
-    auto lock = std::unique_lock{queue_mutex};
-    if (work_queue.empty())
-      break;
-    lock.unlock();
-    std::this_thread::sleep_for(10ms);
-  }
+// Stop DNS resolution thread
+void stop_resolver() {
+  shutdown = true;
 
-  // Shutdown workers
-  {
-    auto lock = std::scoped_lock{queue_mutex};
-    shutdown = true;
-  }
-  queue_cv.notify_all();
+  if (dns_thread && dns_thread->joinable())
+    dns_thread->join();
 
-  // Join all worker threads
-  for (auto &worker : workers)
-    if (worker.joinable())
-      worker.join();
-
-  workers.clear();
-  shutdown = false;
+  dns_thread.reset();
+  store_ptr.reset();
 }
 
 } // namespace dns

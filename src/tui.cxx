@@ -6,6 +6,7 @@
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <print>
+#include <set>
 #include <thread>
 
 namespace tui {
@@ -109,6 +110,33 @@ std::string data_store::get_time_display() const {
 bool data_store::is_live() const {
   auto lock = std::scoped_lock{mutex_};
   return is_live_capture_;
+}
+
+std::vector<std::string> data_store::get_unresolved_ips() const {
+  auto lock = std::scoped_lock{mutex_};
+  auto unresolved = std::vector<std::string>{};
+
+  // Collect unique IPs that don't have hostnames yet
+  auto seen_ips = std::set<std::string>{};
+  for (const auto &[key, ep] : endpoints_) {
+    if (ep.hostname.empty() && !seen_ips.contains(ep.ip)) {
+      unresolved.push_back(ep.ip);
+      seen_ips.insert(ep.ip);
+    }
+  }
+
+  return unresolved;
+}
+
+void data_store::update_hostname(std::string_view ip,
+                                 std::string_view hostname) {
+  auto lock = std::scoped_lock{mutex_};
+
+  // Update all endpoints with this IP address
+  for (auto &[key, ep] : endpoints_) {
+    if (ep.ip == ip)
+      ep.hostname = hostname;
+  }
 }
 
 // renderer implementation
