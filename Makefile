@@ -35,7 +35,8 @@ test: build
 # Run live capture (requires elevated privileges)
 live: build
 	@echo "Starting live capture (requires sudo/elevated privileges)..."
-	docker run --rm -it --cap-add=NET_ADMIN --cap-add=NET_RAW --net=host $(IMAGE)
+	# docker run --rm -it --cap-add=NET_ADMIN --cap-add=NET_RAW --net=host $(IMAGE)
+	docker run --rm -it --network=host $(IMAGE)
 
 # Remove Docker image
 clean:

@@ -283,7 +283,12 @@ int main(int argc, char *argv[]) {
     // Live mode - capture from default interface
     live_mode = true;
 
-    // Find best network interface (prefer en0 on macOS, eth0 on Linux)
+    // On Linux, use "any" pseudo-device to capture from all interfaces
+    // On macOS, find best network interface (prefer en0)
+    std::string dev_name = "any"; // Default to Linux "any" device
+
+#ifdef __APPLE__
+    // macOS doesn't support "any" device, so find best interface
     pcap_if_t *alldevs = nullptr;
     if (pcap_findalldevs(&alldevs, errbuf.data()) == -1 || !alldevs) {
       std::print("Error finding network interfaces: {}\n", errbuf.data());
@@ -291,11 +296,10 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    // Try to find en0 (macOS Wi-Fi) or eth0 (Linux), otherwise use first
-    // non-loopback interface
-    std::string dev_name;
+    // Try to find en0 (macOS Wi-Fi), otherwise use first non-loopback
+    dev_name.clear();
     for (auto d = alldevs; d != nullptr; d = d->next) {
-      if (std::string{d->name} == "en0" || std::string{d->name} == "eth0") {
+      if (std::string{d->name} == "en0") {
         dev_name = d->name;
         break;
       }
@@ -310,15 +314,12 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    // List available interfaces for debugging
-    auto interface_count = 0uz;
-    for (auto d = alldevs; d != nullptr; d = d->next)
-      interface_count++;
+    pcap_freealldevs(alldevs);
+#endif
 
     // Open live capture
     handle.reset(
         pcap_open_live(dev_name.c_str(), 65535, 1, 1000, errbuf.data()));
-    pcap_freealldevs(alldevs);
 
     if (!handle) {
       std::print("Error opening interface {}: {}\n", dev_name, errbuf.data());
@@ -336,8 +337,10 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    std::print("Live capture on {} ({} interfaces available)\n", dev_name,
-               interface_count);
+    if (dev_name == "any")
+      std::print("Live capture on all interfaces (device: {})\n", dev_name);
+    else
+      std::print("Live capture on interface: {}\n", dev_name);
     std::print("Press Ctrl+C to stop\n\n");
   } else {
     // Replay mode - read from file
