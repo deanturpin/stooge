@@ -50,6 +50,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <net/ethernet.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -67,13 +68,15 @@ constexpr auto SPEEDUP_FACTOR = 1.0;
 
 // Global flag for signal handling
 static volatile sig_atomic_t stop_capture = 0;
-static std::atomic<tui::renderer *> global_renderer{nullptr};
+static std::shared_ptr<tui::renderer> global_renderer{nullptr};
+static std::mutex global_renderer_mutex;
 
 // Signal handler for graceful shutdown
 static void signal_handler(int signum) {
   stop_capture = 1;
-  if (auto renderer = global_renderer.load(); renderer != nullptr)
-    renderer->stop();
+  auto lock = std::scoped_lock{global_renderer_mutex};
+  if (global_renderer != nullptr)
+    global_renderer->stop();
 }
 
 // Compile-time validation
@@ -334,14 +337,17 @@ int main(int argc, char *argv[]) {
   // Initialise TUI data store (but don't start renderer yet)
   auto tui_store = std::make_shared<tui::data_store>();
   tui_store->set_capture_mode(live_mode); // Set mode before packet processing
-  std::unique_ptr<tui::renderer> tui_renderer;
+  std::shared_ptr<tui::renderer> tui_renderer;
 
   // Start DNS resolver thread to work on endpoint map (with 2s timeout)
   dns::start_resolver(tui_store);
 
   if (use_tui) {
-    tui_renderer = std::make_unique<tui::renderer>(tui_store);
-    global_renderer.store(tui_renderer.get());
+    tui_renderer = std::make_shared<tui::renderer>(tui_store);
+    {
+      auto lock = std::scoped_lock{global_renderer_mutex};
+      global_renderer = tui_renderer;
+    }
 
     // Set quit callback to stop packet capture when user presses q/Esc
     tui_renderer->set_quit_callback([&]() { stop_capture = 1; });
@@ -537,7 +543,10 @@ int main(int argc, char *argv[]) {
         // Suppress cleanup exceptions
       }
     }
-    global_renderer.store(nullptr);
+    {
+      auto lock = std::scoped_lock{global_renderer_mutex};
+      global_renderer.reset();
+    }
     std::print("\n\nFatal error: bad_function_call at packet {}\n",
                packet_count);
     std::print("Error details: {}\n", e.what());
@@ -556,7 +565,10 @@ int main(int argc, char *argv[]) {
         // Suppress cleanup exceptions
       }
     }
-    global_renderer.store(nullptr);
+    {
+      auto lock = std::scoped_lock{global_renderer_mutex};
+      global_renderer.reset();
+    }
     std::print("\n\nFatal error during packet processing at packet {}: {}\n",
                packet_count, e.what());
     dns::stop_resolver();
@@ -570,7 +582,10 @@ int main(int argc, char *argv[]) {
         // Suppress cleanup exceptions
       }
     }
-    global_renderer.store(nullptr);
+    {
+      auto lock = std::scoped_lock{global_renderer_mutex};
+      global_renderer.reset();
+    }
     std::print(
         "\n\nFatal error during packet processing (unknown exception)\n");
     dns::stop_resolver();
@@ -586,7 +601,10 @@ int main(int argc, char *argv[]) {
       std::print("Warning: TUI cleanup error: {}\n", e.what());
     }
   }
-  global_renderer.store(nullptr);
+  {
+    auto lock = std::scoped_lock{global_renderer_mutex};
+    global_renderer.reset();
+  }
 
   // Check if capture ended due to error
   if (capture_result == -1) {
