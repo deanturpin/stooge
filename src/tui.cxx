@@ -84,8 +84,8 @@ std::vector<packet_entry> data_store::get_recent_packets(size_t count) const {
 }
 
 size_t data_store::get_total_packets() const {
-  auto lock = std::scoped_lock{mutex_};
-  return total_packets_;
+  // Atomic counter - no lock needed
+  return total_packets_.load();
 }
 
 void data_store::set_capture_time(std::chrono::steady_clock::time_point start,

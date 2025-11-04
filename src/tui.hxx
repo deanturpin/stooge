@@ -96,7 +96,7 @@ private:
   mutable std::mutex mutex_;
   std::map<std::string, endpoint_stats> endpoints_; // Key: "ip:port:protocol"
   std::deque<packet_entry> packets_;
-  size_t total_packets_ = 0uz;
+  std::atomic<size_t> total_packets_{0uz};    // Lock-free counter
   static constexpr auto MAX_PACKETS = 1000uz; // Ringbuffer size
 
   // Timing information
