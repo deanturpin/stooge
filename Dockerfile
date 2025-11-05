@@ -33,7 +33,7 @@ WORKDIR /app
 COPY . .
 
 # Build using CMake (parallel build with all available cores)
-RUN cmake -B build && cmake --build build -j$(nproc)
+RUN cmake -B build && cmake --build build --parallel
 
 # Entry point - run stooge binary with PCAP file argument
 ENTRYPOINT ["./build/stooge"]
