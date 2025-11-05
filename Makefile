@@ -44,6 +44,7 @@ gdb: build
 	@echo "Starting GDB debugging session..."
 	docker run --rm -it --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
 		-v $(PWD):/data --entrypoint /bin/bash $(IMAGE) \
+		# -c "gdb -ex run --args /app/build/stooge"
 		-c "gdb -ex run --args /app/build/stooge /data/laptop.pcapng"
 
 # Remove Docker image

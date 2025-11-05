@@ -404,8 +404,8 @@ void renderer::render_loop(std::stop_token stoken) {
       });
 
   // Refresh periodically (only when not paused)
-  // Capture this to access: paused_, screen_ member variables; stoken for stop
-  auto refresh_thread = std::jthread{[this, &stoken](std::stop_token st) {
+  // Capture this to access: paused_, screen_ member variables
+  auto refresh_thread = std::jthread{[this](std::stop_token st) {
     while (!st.stop_requested()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
       if (!st.stop_requested() && !paused_ && screen_.has_value()) {
