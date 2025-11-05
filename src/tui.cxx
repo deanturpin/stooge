@@ -176,7 +176,18 @@ void renderer::start() {
     return;
 
   running_ = true;
-  render_thread_ = std::make_unique<std::thread>([this] { render_loop(); });
+  render_thread_ = std::make_unique<std::thread>([this] {
+    try {
+      render_loop();
+    } catch (const std::exception &e) {
+      // Log error and ensure clean termination instead of std::terminate()
+      std::print(stderr, "\nFatal error in render thread: {}\n", e.what());
+      running_ = false;
+    } catch (...) {
+      std::print(stderr, "\nUnknown fatal error in render thread\n");
+      running_ = false;
+    }
+  });
 }
 
 void renderer::stop() {
