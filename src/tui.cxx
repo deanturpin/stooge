@@ -256,7 +256,7 @@ void renderer::render_loop(std::stop_token stoken) {
 
     // Get current data (frozen if paused)
     auto endpoints = store_->get_endpoints();
-    auto packets = store_->get_recent_packets(500);
+    auto packets = store_->get_recent_packets(1000);
     auto total = store_->get_total_packets();
 
     // Build endpoint list (left pane)
