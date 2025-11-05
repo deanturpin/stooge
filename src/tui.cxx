@@ -410,7 +410,7 @@ void renderer::render_loop() {
       });
 
   // Refresh periodically (only when not paused)
-  // Only capture this - use screen_ member variable instead of capturing screen
+  // Capture this to access: running_, paused_, screen_ member variables
   auto refresh_thread = std::thread{[this]() {
     try {
       while (running_) {
