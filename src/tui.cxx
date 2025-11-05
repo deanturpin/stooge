@@ -403,26 +403,16 @@ void renderer::render_loop(std::stop_token stoken) {
         return false;
       });
 
-  // Refresh periodically (only when not paused)
-  // Capture this to access: paused_, screen_ member variables
+  // Refresh thread posts events periodically to trigger redraws
+  // This runs in parallel with screen.Loop() which blocks on event processing
   auto refresh_thread = std::jthread{[this](std::stop_token st) {
     while (!st.stop_requested()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      if (!st.stop_requested() && !paused_ && screen_.has_value()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      if (!paused_ && screen_.has_value()) {
         try {
           screen_->get().PostEvent(Event::Custom);
-        } catch (const std::exception &e) {
-          // PostEvent failed - likely during shutdown when screen is
-          // destructing This is expected during cleanup, so exit gracefully
-          std::print(stderr,
-                     "DEBUG: Refresh thread exiting, PostEvent threw: {}\n",
-                     e.what());
-          break;
         } catch (...) {
-          // Unknown exception - should only happen during shutdown
-          std::print(stderr,
-                     "DEBUG: Refresh thread exiting, PostEvent threw unknown "
-                     "exception\n");
+          // PostEvent failed during shutdown - exit gracefully
           break;
         }
       }
@@ -431,9 +421,7 @@ void renderer::render_loop(std::stop_token stoken) {
 
   screen.Loop(component_with_shortcuts);
 
-  // Ensure refresh thread stops before cleanup
   set_status("Shutting down...");
-  // jthread automatically joins on destruction (no explicit join needed)
 
   // Reset terminal to clean up any leftover escape codes
   // Note: screen_ will naturally become invalid when local screen destructs
