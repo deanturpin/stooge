@@ -218,6 +218,8 @@ void renderer::set_status(std::string_view message) {
 }
 
 void renderer::set_quit_callback(std::function<void()> callback) {
+  auto lock = std::scoped_lock{
+      status_mutex_}; // Protect against race with render thread
   quit_callback_ = std::move(callback);
 }
 
@@ -441,8 +443,16 @@ void renderer::render_loop() {
 
   // Invoke quit callback after all cleanup is complete to avoid double-free
   // This ensures the renderer is fully stopped before main loop exits
-  if (quit_callback_)
-    quit_callback_();
+  // Use local copy with mutex protection to avoid race with main thread
+  auto callback_copy = std::function<void()>{};
+  {
+    auto lock =
+        std::scoped_lock{status_mutex_}; // Reuse status_mutex for simplicity
+    if (quit_callback_)
+      callback_copy = quit_callback_;
+  }
+  if (callback_copy)
+    callback_copy();
 }
 
 } // namespace tui
