@@ -411,10 +411,10 @@ void renderer::render_loop() {
 
   // Refresh periodically (only when not paused)
   // Only capture this - use screen_ member variable instead of capturing screen
-  std::thread refresh_thread([this]() {
+  auto refresh_thread = std::thread{[this]() {
     try {
       while (running_) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
         if (running_ && !paused_ && screen_.has_value()) {
           try {
             screen_->get().PostEvent(Event::Custom);
@@ -427,7 +427,7 @@ void renderer::render_loop() {
     } catch (...) {
       // Suppress exceptions during shutdown
     }
-  });
+  }};
 
   screen.Loop(component_with_shortcuts);
 
