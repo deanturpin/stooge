@@ -176,6 +176,7 @@ void renderer::start() {
     return;
 
   render_thread_ = std::jthread{[this](std::stop_token stoken) {
+    auto start_time = std::chrono::steady_clock::now();
     try {
       render_loop(stoken);
     } catch (const std::exception &e) {
@@ -184,6 +185,11 @@ void renderer::start() {
     } catch (...) {
       std::print(stderr, "\nUnknown fatal error in render thread\n");
     }
+
+    auto duration = std::chrono::steady_clock::now() - start_time;
+    auto seconds =
+        std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+    std::print(stderr, "Render thread exiting after {}s\n", seconds);
   }};
 }
 
@@ -406,17 +412,27 @@ void renderer::render_loop(std::stop_token stoken) {
   // Refresh thread posts events periodically to trigger redraws
   // This runs in parallel with screen.Loop() which blocks on event processing
   auto refresh_thread = std::jthread{[this](std::stop_token st) {
+    auto start_time = std::chrono::steady_clock::now();
+    auto event_count = 0uz;
+
     while (!st.stop_requested()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       if (!paused_ && screen_.has_value()) {
         try {
           screen_->get().PostEvent(Event::Custom);
+          event_count++;
         } catch (...) {
           // PostEvent failed during shutdown - exit gracefully
           break;
         }
       }
     }
+
+    auto duration = std::chrono::steady_clock::now() - start_time;
+    auto seconds =
+        std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+    std::print(stderr, "Refresh thread exiting after {}s ({} events posted)\n",
+               seconds, event_count);
   }};
 
   screen.Loop(component_with_shortcuts);
