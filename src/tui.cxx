@@ -406,20 +406,26 @@ void renderer::render_loop(std::stop_token stoken) {
   // Refresh periodically (only when not paused)
   // Capture this to access: paused_, screen_ member variables; stoken for stop
   auto refresh_thread = std::jthread{[this, &stoken](std::stop_token st) {
-    try {
-      while (!st.stop_requested()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        if (!st.stop_requested() && !paused_ && screen_.has_value()) {
-          try {
-            screen_->get().PostEvent(Event::Custom);
-          } catch (...) {
-            // Screen might be shutting down, ignore
-            break;
-          }
+    while (!st.stop_requested()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      if (!st.stop_requested() && !paused_ && screen_.has_value()) {
+        try {
+          screen_->get().PostEvent(Event::Custom);
+        } catch (const std::exception &e) {
+          // PostEvent failed - likely during shutdown when screen is
+          // destructing This is expected during cleanup, so exit gracefully
+          std::print(stderr,
+                     "DEBUG: Refresh thread exiting, PostEvent threw: {}\n",
+                     e.what());
+          break;
+        } catch (...) {
+          // Unknown exception - should only happen during shutdown
+          std::print(stderr,
+                     "DEBUG: Refresh thread exiting, PostEvent threw unknown "
+                     "exception\n");
+          break;
         }
       }
-    } catch (...) {
-      // Suppress exceptions during shutdown
     }
   }};
 
