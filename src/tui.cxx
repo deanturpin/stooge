@@ -424,8 +424,8 @@ void renderer::render_loop() {
   if (refresh_thread.joinable())
     refresh_thread.join();
 
-  // Explicitly reset terminal to clean up any leftover escape codes
-  screen_.reset();
+  // Reset terminal to clean up any leftover escape codes
+  // Note: screen_ will naturally become invalid when local screen destructs
   std::print("\033[0m\033[?25h"); // Reset attributes and show cursor
 
   // Invoke quit callback after all cleanup is complete to avoid double-free
