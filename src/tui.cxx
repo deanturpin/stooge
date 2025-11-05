@@ -172,29 +172,24 @@ renderer::renderer(std::shared_ptr<data_store> store) : store_(store) {}
 renderer::~renderer() { stop(); }
 
 void renderer::start() {
-  if (running_)
+  if (render_thread_.joinable())
     return;
 
-  running_ = true;
-  render_thread_ = std::make_unique<std::thread>([this] {
+  render_thread_ = std::jthread{[this](std::stop_token stoken) {
     try {
-      render_loop();
+      render_loop(stoken);
     } catch (const std::exception &e) {
       // Log error and ensure clean termination instead of std::terminate()
       std::print(stderr, "\nFatal error in render thread: {}\n", e.what());
-      running_ = false;
     } catch (...) {
       std::print(stderr, "\nUnknown fatal error in render thread\n");
-      running_ = false;
     }
-  });
+  }};
 }
 
 void renderer::stop() {
-  // Use exchange to atomically check and set - only first caller proceeds
-  auto was_running = running_.exchange(false);
-  if (!was_running)
-    return; // Already stopped
+  // Request stop via stop token (thread-safe, idempotent)
+  render_thread_.request_stop();
 
   // Exit the screen loop if it's still active
   if (screen_.has_value()) {
@@ -205,12 +200,12 @@ void renderer::stop() {
     }
   }
 
-  // Join the render thread if it exists and is joinable
-  if (render_thread_ && render_thread_->joinable())
-    render_thread_->join();
+  // jthread automatically joins on destruction, but explicit join is clearer
+  if (render_thread_.joinable())
+    render_thread_.join();
 }
 
-bool renderer::is_running() const { return running_; }
+bool renderer::is_running() const { return render_thread_.joinable(); }
 
 void renderer::set_status(std::string_view message) {
   auto lock = std::scoped_lock{status_mutex_};
@@ -223,7 +218,7 @@ void renderer::set_quit_callback(std::function<void()> callback) {
   quit_callback_ = std::move(callback);
 }
 
-void renderer::render_loop() {
+void renderer::render_loop(std::stop_token stoken) {
   using namespace ftxui;
 
   auto screen = ScreenInteractive::Fullscreen();
@@ -372,15 +367,14 @@ void renderer::render_loop() {
   });
 
   // Capture component to handle keyboard shortcuts
-  // Capture this for member access, screen by reference (it's a local in this
-  // function)
+  // Capture this for member access, screen and stoken by reference (locals)
   auto component_with_shortcuts =
-      CatchEvent(component, [this, &screen](Event event) {
+      CatchEvent(component, [this, &screen, &stoken](Event event) {
         // Quit shortcuts: q, Esc, Ctrl+C
         if (event == Event::Character('q') || event == Event::Escape ||
             (event.is_character() && event.character() == "c" &&
              event.input() == "\x03")) {
-          running_ = false;
+          render_thread_.request_stop();
           screen.Exit();
           // Invoke quit callback to signal main loop to exit - but only after
           // we've safely exited the screen loop to avoid double-free
@@ -410,12 +404,12 @@ void renderer::render_loop() {
       });
 
   // Refresh periodically (only when not paused)
-  // Capture this to access: running_, paused_, screen_ member variables
-  auto refresh_thread = std::thread{[this]() {
+  // Capture this to access: paused_, screen_ member variables; stoken for stop
+  auto refresh_thread = std::jthread{[this, &stoken](std::stop_token st) {
     try {
-      while (running_) {
+      while (!st.stop_requested()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        if (running_ && !paused_ && screen_.has_value()) {
+        if (!st.stop_requested() && !paused_ && screen_.has_value()) {
           try {
             screen_->get().PostEvent(Event::Custom);
           } catch (...) {
@@ -433,9 +427,7 @@ void renderer::render_loop() {
 
   // Ensure refresh thread stops before cleanup
   set_status("Shutting down...");
-  running_ = false;
-  if (refresh_thread.joinable())
-    refresh_thread.join();
+  // jthread automatically joins on destruction (no explicit join needed)
 
   // Reset terminal to clean up any leftover escape codes
   // Note: screen_ will naturally become invalid when local screen destructs

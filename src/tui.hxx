@@ -131,12 +131,11 @@ public:
 
 private:
   std::shared_ptr<data_store> store_;
-  std::atomic<bool> running_{false};
   bool paused_ = false;
   bool show_help_ = false;
   std::string status_message_; // Status line message
   std::mutex status_mutex_;    // Protect status message updates
-  std::unique_ptr<std::thread> render_thread_;
+  std::jthread render_thread_; // Auto-joining thread with stop token
   std::optional<std::reference_wrapper<ftxui::ScreenInteractive>>
       screen_; // Reference to FTXUI screen for cleanup
 
@@ -148,7 +147,7 @@ private:
   // Callback invoked when user quits
   std::function<void()> quit_callback_;
 
-  void render_loop();
+  void render_loop(std::stop_token stoken);
   void set_status(std::string_view message);
 };
 
