@@ -32,8 +32,8 @@ WORKDIR /app
 # Copy all source files into container
 COPY . .
 
-# Build using CMake
-RUN cmake -B build && cmake --build build
+# Build using CMake (parallel build with all available cores)
+RUN cmake -B build && cmake --build build -j$(nproc)
 
 # Entry point - run stooge binary with PCAP file argument
 ENTRYPOINT ["./build/stooge"]

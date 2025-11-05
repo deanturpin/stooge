@@ -382,6 +382,12 @@ int main(int argc, char *argv[]) {
     if (use_tui)
       tui_store->set_status("DEBUG: Starting packet processing loop");
 
+    // Check if handle is valid before processing packets
+    if (handle == nullptr) {
+      std::print("Error: Invalid pcap handle\n");
+      return 1;
+    }
+
     while (!stop_capture && (capture_result = pcap_next_ex(
                                  handle.get(), &header, &packet)) >= 0) {
       // Handle pcap_next_ex return values:
