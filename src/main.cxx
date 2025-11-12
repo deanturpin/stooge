@@ -371,27 +371,50 @@ std::optional<packet_info> parse_generic(const u_char *packet,
 // Parse raw packet data into structured packet_info
 // Returns packet_info for all EtherTypes (IPv4, IPv6, ARP, and unknown)
 std::optional<packet_info> parse_packet(const u_char *packet,
-                                        const struct pcap_pkthdr *header) {
-  // Verify minimum Ethernet header size
-  if (header->caplen < sizeof(struct ether_header))
+                                        const struct pcap_pkthdr *header,
+                                        bool is_sll = false) {
+  // Linux SLL (cooked) capture has 16-byte header instead of 14-byte Ethernet
+  auto header_size = is_sll ? 16uz : sizeof(struct ether_header);
+
+  if (header->caplen < header_size)
     return std::nullopt;
 
-  auto eth = reinterpret_cast<const struct ether_header *>(packet);
-  auto ether_type = ntohs(eth->ether_type);
+  auto ether_type = uint16_t{};
+  auto fake_eth = ether_header{};
+  const struct ether_header *eth_ptr = nullptr;
+
+  if (is_sll) {
+    // SLL header: protocol type is at offset 14-15 (2 bytes, big-endian)
+    ether_type = (packet[14] << 8) | packet[15];
+
+    // Extract MAC address from SLL (source MAC at offset 6-11, 6 bytes)
+    std::memcpy(fake_eth.ether_shost, packet + 6, 6);
+    // SLL doesn't have dest MAC, set to zero
+    std::memset(fake_eth.ether_dhost, 0, 6);
+    fake_eth.ether_type = htons(ether_type);
+
+    // Adjust packet pointer to skip SLL header (16 bytes) as if it were
+    // Ethernet (14 bytes) so parsers see payload at +14
+    packet = packet + 2;
+    eth_ptr = &fake_eth;
+  } else {
+    eth_ptr = reinterpret_cast<const struct ether_header *>(packet);
+    ether_type = ntohs(eth_ptr->ether_type);
+  }
 
   // Route to appropriate parser based on EtherType
   switch (ether_type) {
   case ETHERTYPE_IP: // 0x0800 - IPv4
-    return parse_ipv4(packet, header, eth);
+    return parse_ipv4(packet, header, eth_ptr);
 
   case 0x86DD: // IPv6
-    return parse_ipv6(packet, header, eth);
+    return parse_ipv6(packet, header, eth_ptr);
 
   case 0x0806: // ARP
-    return parse_arp(packet, header, eth);
+    return parse_arp(packet, header, eth_ptr);
 
   default: // Unknown EtherType
-    return parse_generic(packet, header, eth);
+    return parse_generic(packet, header, eth_ptr);
   }
 }
 
@@ -483,6 +506,12 @@ int main(int argc, char *argv[]) {
     std::print("\n");
   }
 
+  // Check data link type
+  auto datalink = pcap_datalink(handle.get());
+  auto is_sll = datalink == 113; // DLT_LINUX_SLL
+  if (is_sll)
+    std::print("Note: Using Linux cooked capture (SLL) format\n\n");
+
   // Initialise dissector runtime
   auto dissectors = dissector::runtime{};
   dissectors.load("dissectors/http.lua");
@@ -560,10 +589,11 @@ int main(int argc, char *argv[]) {
               start_time = std::chrono::steady_clock::now();
 
             auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                               now - *start_time)
-                               .count();
-            packet_offset = static_cast<double>(elapsed);
+            auto elapsed =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - *start_time)
+                    .count();
+            packet_offset = elapsed / 1000.0;
           }
 
           if (start_time)
@@ -573,7 +603,7 @@ int main(int argc, char *argv[]) {
           tui_store->set_last_packet_timestamp(header->ts.tv_sec,
                                                header->ts.tv_usec);
 
-          auto info = parse_packet(packet, header);
+          auto info = parse_packet(packet, header, is_sll);
           if (info) {
             auto src_vendor = oui::lookup_vendor(info->src_mac_);
             auto dst_vendor = oui::lookup_vendor(info->dst_mac_);
