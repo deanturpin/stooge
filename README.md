@@ -6,7 +6,7 @@ Network traffic replayer with Lua dissector support: replay PCAP files with timi
 
 ## Quick Start
 
-Run with a PCAP file (requires `-it` for interactive TUI):
+Run with a PCAP file (requires `-it` for interactive TUI, if you omit that it will run in the less exciting text-only mode):
 
 ```bash
 docker run --rm -it -v $(pwd):/data deanturpin/stooge /data/capture.pcapng
@@ -15,7 +15,7 @@ docker run --rm -it -v $(pwd):/data deanturpin/stooge /data/capture.pcapng
 Live capture mode (requires elevated privileges):
 
 ```bash
-docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW --net=host deanturpin/stooge
+docker run --rm -it --network=host deanturpin/stooge
 ```
 
 ## Features
