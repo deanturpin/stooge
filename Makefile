@@ -1,7 +1,7 @@
 # Makefile for stooge - network traffic replayer
 # All builds run in Docker containers to ensure consistent environment
 
-.PHONY: all build run run-text run-quick live test clean deploy format install kill
+.PHONY: all build run run-text run-quick live test clean deploy format install kill release
 
 IMAGE := deanturpin/stooge
 
@@ -16,6 +16,10 @@ format:
 build:
 	# docker build --no-cache -t $(IMAGE) .
 	docker build -t $(IMAGE) .
+
+# Build Docker image
+build-clean:
+	docker build --no-cache -t $(IMAGE) .
 
 # Run container with sample PCAP file (interactive TUI mode)
 run:
@@ -68,3 +72,14 @@ install:
 # Commit all changes and push to remote
 deploy:
 	git add -A && git commit -m "Auto-commit from make deploy 🤖" && git push
+
+# Release management: rebase release branch from main and push
+# This updates the stable release branch with latest changes from main
+release:
+	@echo "📦 Updating release branch from main..."
+	@git switch release
+	@git rebase main
+	@git push --force-with-lease
+	@git switch main
+	@echo "✅ Release branch updated and pushed!"
+	@echo "🐳 Docker Hub will automatically build from release branch"
