@@ -46,6 +46,14 @@ The TUI uses different colours to distinguish protocol types and IP versions:
 
 **Note:** Interactive TUI mode requires Docker `-it` flags. Without these flags, the tool automatically falls back to text-only output mode.
 
+## Keyboard Shortcuts
+
+When running in interactive TUI mode:
+
+- **`q`** or **`Esc`** - Quit the application
+- **`Ctrl+C`** - Quit the application
+- **Mouse wheel** - Scroll through packet and endpoint lists
+
 ## Docker Images
 
 Two images are automatically built:
