@@ -158,20 +158,10 @@ struct packet_info {
   size_t payload_length_ = 0uz;
 };
 
-// Parse raw packet data into structured packet_info
-// Returns std::nullopt if packet is malformed or not IPv4
-std::optional<packet_info> parse_packet(const u_char *packet,
-                                        const struct pcap_pkthdr *header) {
-  // Verify minimum Ethernet header size
-  if (header->caplen < sizeof(struct ether_header))
-    return std::nullopt;
-
-  auto eth = reinterpret_cast<const struct ether_header *>(packet);
-
-  // Only process IPv4 packets
-  if (ntohs(eth->ether_type) != ETHERTYPE_IP)
-    return std::nullopt;
-
+// Helper: Parse IPv4 packet
+std::optional<packet_info> parse_ipv4(const u_char *packet,
+                                      const struct pcap_pkthdr *header,
+                                      const struct ether_header *eth) {
   auto info = packet_info{};
 
   // Extract MAC addresses
@@ -239,6 +229,170 @@ std::optional<packet_info> parse_packet(const u_char *packet,
   }
 
   return info;
+}
+
+// Helper: Parse IPv6 packet
+std::optional<packet_info> parse_ipv6(const u_char *packet,
+                                      const struct pcap_pkthdr *header,
+                                      const struct ether_header *eth) {
+  auto info = packet_info{};
+
+  // Extract MAC addresses
+  std::memcpy(info.src_mac_.data(), eth->ether_shost, 6);
+  std::memcpy(info.dst_mac_.data(), eth->ether_dhost, 6);
+
+  // IPv6 header is 40 bytes minimum
+  constexpr auto ipv6_header_size = 40uz;
+  if (header->caplen < sizeof(struct ether_header) + ipv6_header_size)
+    return std::nullopt;
+
+  auto ipv6_start = packet + sizeof(struct ether_header);
+
+  // Parse IPv6 addresses (128-bit each, at offset 8 and 24)
+  auto src_ip = std::array<char, INET6_ADDRSTRLEN>{};
+  auto dst_ip = std::array<char, INET6_ADDRSTRLEN>{};
+  inet_ntop(AF_INET6, ipv6_start + 8, src_ip.data(), INET6_ADDRSTRLEN);
+  inet_ntop(AF_INET6, ipv6_start + 24, dst_ip.data(), INET6_ADDRSTRLEN);
+  info.src_ip_ = src_ip.data();
+  info.dst_ip_ = dst_ip.data();
+  info.length_ = header->len;
+
+  // Next header field (at offset 6)
+  auto next_header = ipv6_start[6];
+
+  // Extract TCP/UDP ports if present
+  auto transport_start = ipv6_start + ipv6_header_size;
+
+  if (next_header == IPPROTO_TCP) {
+    if (header->caplen >= sizeof(struct ether_header) + ipv6_header_size +
+                              sizeof(struct tcphdr)) {
+      auto tcph = reinterpret_cast<const struct tcphdr *>(transport_start);
+      info.protocol_ = "TCP";
+      info.src_port_ = ntohs(tcph->th_sport);
+      info.dst_port_ = ntohs(tcph->th_dport);
+
+      auto tcp_header_len = tcph->th_off * 4;
+      auto payload_offset =
+          sizeof(struct ether_header) + ipv6_header_size + tcp_header_len;
+
+      if (header->caplen > payload_offset) {
+        info.payload_ = packet + payload_offset;
+        info.payload_length_ = header->caplen - payload_offset;
+      }
+    }
+  } else if (next_header == IPPROTO_UDP) {
+    if (header->caplen >= sizeof(struct ether_header) + ipv6_header_size +
+                              sizeof(struct udphdr)) {
+      auto udph = reinterpret_cast<const struct udphdr *>(transport_start);
+      info.protocol_ = "UDP";
+      info.src_port_ = ntohs(udph->uh_sport);
+      info.dst_port_ = ntohs(udph->uh_dport);
+
+      auto payload_offset = sizeof(struct ether_header) + ipv6_header_size +
+                            sizeof(struct udphdr);
+
+      if (header->caplen > payload_offset) {
+        info.payload_ = packet + payload_offset;
+        info.payload_length_ = header->caplen - payload_offset;
+      }
+    }
+  } else {
+    // Other IPv6 protocols (ICMPv6, etc.)
+    info.protocol_ = "IPv6";
+  }
+
+  return info;
+}
+
+// Helper: Parse ARP packet
+std::optional<packet_info> parse_arp(const u_char *packet,
+                                     const struct pcap_pkthdr *header,
+                                     const struct ether_header *eth) {
+  auto info = packet_info{};
+
+  // Extract MAC addresses
+  std::memcpy(info.src_mac_.data(), eth->ether_shost, 6);
+  std::memcpy(info.dst_mac_.data(), eth->ether_dhost, 6);
+
+  // ARP packet structure: 28 bytes minimum
+  // Hardware type (2), Protocol type (2), HW len (1), Proto len (1), Operation
+  // (2) Sender HW addr (6), Sender Proto addr (4), Target HW addr (6), Target
+  // Proto addr (4)
+  constexpr auto arp_header_size = 28uz;
+  if (header->caplen < sizeof(struct ether_header) + arp_header_size)
+    return std::nullopt;
+
+  auto arp_start = packet + sizeof(struct ether_header);
+
+  // Parse sender and target IPv4 addresses
+  auto sender_ip = std::array<char, INET_ADDRSTRLEN>{};
+  auto target_ip = std::array<char, INET_ADDRSTRLEN>{};
+  inet_ntop(AF_INET, arp_start + 14, sender_ip.data(),
+            INET_ADDRSTRLEN); // Sender IP at offset 14
+  inet_ntop(AF_INET, arp_start + 24, target_ip.data(),
+            INET_ADDRSTRLEN); // Target IP at offset 24
+
+  info.src_ip_ = sender_ip.data();
+  info.dst_ip_ = target_ip.data();
+  info.protocol_ = "ARP";
+  info.length_ = header->len;
+
+  return info;
+}
+
+// Helper: Parse unknown EtherType packets
+std::optional<packet_info> parse_generic(const u_char *packet,
+                                         const struct pcap_pkthdr *header,
+                                         const struct ether_header *eth) {
+  auto info = packet_info{};
+
+  // Extract MAC addresses
+  std::memcpy(info.src_mac_.data(), eth->ether_shost, 6);
+  std::memcpy(info.dst_mac_.data(), eth->ether_dhost, 6);
+
+  // Show EtherType as protocol
+  auto ether_type = ntohs(eth->ether_type);
+  info.protocol_ = std::format("0x{:04X}", ether_type);
+
+  // Use MAC addresses as endpoints
+  info.src_ip_ =
+      std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", info.src_mac_[0],
+                  info.src_mac_[1], info.src_mac_[2], info.src_mac_[3],
+                  info.src_mac_[4], info.src_mac_[5]);
+  info.dst_ip_ =
+      std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", info.dst_mac_[0],
+                  info.dst_mac_[1], info.dst_mac_[2], info.dst_mac_[3],
+                  info.dst_mac_[4], info.dst_mac_[5]);
+  info.length_ = header->len;
+
+  return info;
+}
+
+// Parse raw packet data into structured packet_info
+// Returns packet_info for all EtherTypes (IPv4, IPv6, ARP, and unknown)
+std::optional<packet_info> parse_packet(const u_char *packet,
+                                        const struct pcap_pkthdr *header) {
+  // Verify minimum Ethernet header size
+  if (header->caplen < sizeof(struct ether_header))
+    return std::nullopt;
+
+  auto eth = reinterpret_cast<const struct ether_header *>(packet);
+  auto ether_type = ntohs(eth->ether_type);
+
+  // Route to appropriate parser based on EtherType
+  switch (ether_type) {
+  case ETHERTYPE_IP: // 0x0800 - IPv4
+    return parse_ipv4(packet, header, eth);
+
+  case 0x86DD: // IPv6
+    return parse_ipv6(packet, header, eth);
+
+  case 0x0806: // ARP
+    return parse_arp(packet, header, eth);
+
+  default: // Unknown EtherType
+    return parse_generic(packet, header, eth);
+  }
 }
 
 int main(int argc, char *argv[]) {
