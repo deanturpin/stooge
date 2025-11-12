@@ -141,6 +141,18 @@ size_t data_store::get_total_packets() const {
   return total_packets_.load();
 }
 
+double data_store::get_packets_per_second() const {
+  auto elapsed = std::chrono::steady_clock::now() - start_time_;
+  auto seconds =
+      std::chrono::duration_cast<std::chrono::duration<double>>(elapsed)
+          .count();
+
+  if (seconds < 0.001)
+    return 0.0;
+
+  return static_cast<double>(total_packets_.load()) / seconds;
+}
+
 void data_store::set_capture_mode(bool is_live) {
   // Set capture mode once during initialization
   is_live_capture_.store(is_live);
@@ -338,6 +350,7 @@ void renderer::render_loop() {
     auto total_packets = store_->get_total_packets();
     auto time_display = store_->get_time_display();
     auto is_live = store_->is_live();
+    auto pps = store_->get_packets_per_second();
 
     // Force component re-evaluation by checking if packet count changed
     auto current_count = total_packets;
@@ -350,7 +363,7 @@ void renderer::render_loop() {
 
     // Endpoint header (no Vendor column - merged with MAC)
     endpoint_elements.push_back(
-        text(std::format("{:21} {:8} {:17} {:30} {:5}", "IP:Port", "Protocol",
+        text(std::format("{:21} {:8} {:17} {:30} {:5}", "Addr:Port", "Protocol",
                          "MAC/Vendor", "Hostname", "Pkts")) |
         bold | color(Color::White));
 
@@ -358,18 +371,29 @@ void renderer::render_loop() {
     for (const auto &ep : endpoints) {
       auto ep_text = text(ep.to_string());
 
-      // Colourise by vendor presence, then by protocol
+      // Detect IPv6 (contains ':') vs IPv4 (contains '.')
+      auto is_ipv6 = ep.ip_.find(':') != std::string::npos;
       auto has_vendor = !ep.vendor_.empty() && ep.vendor_ != "-";
 
       if (has_vendor) {
         // Known vendors in bright cyan to stand out
         ep_text = ep_text | color(Color::Cyan);
-      } else if (ep.protocol_ == "TCP") {
-        ep_text = ep_text | color(Color::Green);
-      } else if (ep.protocol_ == "UDP") {
-        ep_text = ep_text | color(Color::Yellow);
+      } else if (is_ipv6) {
+        // IPv6 addresses in magenta/blue tones
+        if (ep.protocol_ == "TCP")
+          ep_text = ep_text | color(Color::GreenLight);
+        else if (ep.protocol_ == "UDP")
+          ep_text = ep_text | color(Color::YellowLight);
+        else
+          ep_text = ep_text | color(Color::CyanLight);
       } else {
-        ep_text = ep_text | color(Color::White);
+        // IPv4 addresses in standard colours
+        if (ep.protocol_ == "TCP")
+          ep_text = ep_text | color(Color::Green);
+        else if (ep.protocol_ == "UDP")
+          ep_text = ep_text | color(Color::Yellow);
+        else
+          ep_text = ep_text | color(Color::White);
       }
 
       endpoint_elements.push_back(ep_text);
@@ -406,13 +430,27 @@ void renderer::render_loop() {
                            time_str, pkt.protocol_, pkt.src_, max_src_width,
                            pkt.dst_, max_dst_width, pkt.bytes_));
 
-      // Colourise by protocol
-      if (pkt.protocol_ == "TCP")
-        row = row | color(Color::Green);
-      else if (pkt.protocol_ == "UDP")
-        row = row | color(Color::Yellow);
-      else
-        row = row | color(Color::White);
+      // Detect IPv6 by checking if source contains multiple colons
+      auto is_ipv6 = std::count(pkt.src_.begin(), pkt.src_.end(), ':') > 1;
+
+      // Colourise by protocol and IP version
+      if (is_ipv6) {
+        // IPv6 packets in lighter colours
+        if (pkt.protocol_ == "TCP")
+          row = row | color(Color::GreenLight);
+        else if (pkt.protocol_ == "UDP")
+          row = row | color(Color::YellowLight);
+        else
+          row = row | color(Color::CyanLight);
+      } else {
+        // IPv4 packets in standard colours
+        if (pkt.protocol_ == "TCP")
+          row = row | color(Color::Green);
+        else if (pkt.protocol_ == "UDP")
+          row = row | color(Color::Yellow);
+        else
+          row = row | color(Color::White);
+      }
 
       packet_elements.push_back(row);
     }
@@ -426,9 +464,10 @@ void renderer::render_loop() {
     spinner_frame_.store((frame + 1) % SPINNER_FRAMES.size());
 
     auto mode_str = is_live ? "LIVE" : "REPLAY";
-    auto title = text(std::format("{} {} | Time: {} | Packets: {}", spinner,
-                                  mode_str, time_display, total_packets)) |
-                 bold | color(Color::Cyan);
+    auto title =
+        text(std::format("{} {} | Time: {} | Packets: {} | Rate: {:.1f} pps",
+                         spinner, mode_str, time_display, total_packets, pps)) |
+        bold | color(Color::Cyan);
 
     // Two-column layout: endpoints left, packets right
     return vbox(

@@ -587,14 +587,19 @@ int main(int argc, char *argv[]) {
                 info->dst_mac_[1], info->dst_mac_[2], info->dst_mac_[3],
                 info->dst_mac_[4], info->dst_mac_[5]);
 
-            tui_store->add_endpoint(info->src_ip_, info->src_port_,
-                                    info->protocol_, "", src_vendor,
-                                    src_mac_str);
-            tui_store->add_endpoint(info->dst_ip_, info->dst_port_,
-                                    info->protocol_, "", dst_vendor,
-                                    dst_mac_str);
+            // Only add endpoints for known protocols (IPv4, IPv6, ARP)
+            // Skip generic unknown EtherType packets (protocol starts with
+            // "0x")
+            if (!info->protocol_.starts_with("0x")) {
+              tui_store->add_endpoint(info->src_ip_, info->src_port_,
+                                      info->protocol_, "", src_vendor,
+                                      src_mac_str);
+              tui_store->add_endpoint(info->dst_ip_, info->dst_port_,
+                                      info->protocol_, "", dst_vendor,
+                                      dst_mac_str);
 
-            dns::notify_new_work();
+              dns::notify_new_work();
+            }
 
             auto format_endpoint = [](std::string_view ip, uint16_t port) {
               if (port == 0)

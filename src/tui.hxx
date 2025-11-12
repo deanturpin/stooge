@@ -64,6 +64,9 @@ public:
   // Get total packet count
   size_t get_total_packets() const;
 
+  // Get packets per second rate
+  double get_packets_per_second() const;
+
   // Set capture mode (live vs replay) - call once during initialization
   void set_capture_mode(bool is_live);
 
@@ -111,6 +114,8 @@ private:
   std::atomic<bool> is_live_capture_{false};
   std::atomic<time_t> last_packet_timestamp_{
       0}; // Actual wall-clock time from PCAP
+  std::chrono::steady_clock::time_point start_time_{
+      std::chrono::steady_clock::now()}; // When capture started
 
   // Status message (e.g., DNS resolution progress)
   std::string status_message_;
