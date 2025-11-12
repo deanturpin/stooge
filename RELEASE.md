@@ -57,9 +57,10 @@ When `main` is stable and ready for release:
 
 3. **Docker Hub builds**:
    - Detects push to `release` branch
-   - Builds fresh Docker image
-   - Tags as `latest` and version-specific tags
-   - Users get updated stable release
+   - Builds fresh Docker image as `deanturpin/stooge:latest`
+   - Stable release available to users
+
+   Note: `main` branch also auto-builds as `deanturpin/stooge:devel` for developers
 
 ## Release Cadence
 
@@ -69,12 +70,12 @@ When `main` is stable and ready for release:
 
 ## Docker Hub Integration
 
-Configure Docker Hub to:
+Current configuration:
 - **Source repository**: `github.com/deanturpin/stooge`
-- **Build branch**: `release`
-- **Tag rules**:
-  - `release` → `latest`
-  - `release` → `{git_tag}` (for version tags)
+- **Build rules**:
+  - `release` branch → `latest` tag (stable releases)
+  - `main` branch → `devel` tag (development builds)
+  - Git tags → Version-specific tags (optional)
 
 ## Version Tagging
 
@@ -104,9 +105,36 @@ If a release has issues:
 
 3. **Docker Hub rebuilds** from rolled-back state
 
+## Docker Images
+
+Two images are automatically built:
+
+### `deanturpin/stooge:latest` (Stable)
+- Built from `release` branch
+- Recommended for production use
+- Only updated via `make release`
+- Thoroughly tested features
+
+```bash
+docker pull deanturpin/stooge:latest
+docker run --rm -it -v $(PWD):/data deanturpin/stooge:latest /data/capture.pcapng
+```
+
+### `deanturpin/stooge:devel` (Development)
+- Built from `main` branch
+- Latest features and fixes
+- May contain experimental code
+- Automatic builds on every push to main
+
+```bash
+docker pull deanturpin/stooge:devel
+docker run --rm -it -v $(PWD):/data deanturpin/stooge:devel /data/capture.pcapng
+```
+
 ## Benefits
 
 ✅ **Stable releases** - Users get tested code from `release`
+✅ **Development preview** - Try latest features with `devel` tag
 ✅ **Rapid development** - No restrictions on `main` branch
 ✅ **Clean history** - Rebase keeps linear history
 ✅ **Automated builds** - Docker Hub handles deployment
