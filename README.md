@@ -45,3 +45,16 @@ The TUI uses different colours to distinguish protocol types and IP versions:
 - Always displayed in Cyan (regardless of IP version)
 
 **Note:** Interactive TUI mode requires Docker `-it` flags. Without these flags, the tool automatically falls back to text-only output mode.
+
+## Docker Images
+
+Two images are automatically built:
+
+- **`deanturpin/stooge:latest`** - Stable release (built from `release` branch)
+- **`deanturpin/stooge:devel`** - Development build (built from `main` branch, latest features)
+
+To use the development version:
+
+```bash
+docker run --rm -it -v $(pwd):/data deanturpin/stooge:devel /data/capture.pcapng
+```
