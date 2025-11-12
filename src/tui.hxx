@@ -70,6 +70,9 @@ public:
   // Set current packet time
   void set_capture_time(double current_seconds);
 
+  // Set last packet's actual timestamp (from PCAP header)
+  void set_last_packet_timestamp(time_t seconds, suseconds_t microseconds);
+
   // Get elapsed time string (for live) or packet time string (for replay)
   std::string get_time_display() const;
 
@@ -106,6 +109,8 @@ private:
   std::atomic<double> current_packet_time_{
       0.0}; // Seconds from PCAP start or elapsed live time
   std::atomic<bool> is_live_capture_{false};
+  std::atomic<time_t> last_packet_timestamp_{
+      0}; // Actual wall-clock time from PCAP
 
   // Status message (e.g., DNS resolution progress)
   std::string status_message_;
@@ -129,26 +134,31 @@ public:
   // Set callback for when user quits (presses q/Esc)
   void set_quit_callback(std::function<void()> callback);
 
+  // Set callback for packet processing (runs in background thread)
+  void set_packet_processor(std::function<void(std::stop_token)> processor);
+
 private:
   std::shared_ptr<data_store> store_;
-  bool paused_ = false;
-  bool show_help_ = false;
   std::string status_message_; // Status line message
   std::mutex status_mutex_;    // Protect status message updates
-  std::jthread render_thread_; // Auto-joining thread with stop token
   std::optional<std::reference_wrapper<ftxui::ScreenInteractive>>
       screen_; // Reference to FTXUI screen for cleanup
+  std::atomic<bool> screen_active_{
+      false}; // Thread-safe flag for screen validity
 
-  // Braille spinner animation state
-  size_t spinner_frame_ = 0uz;
+  // Braille spinner animation state (thread-safe)
+  std::atomic<size_t> spinner_frame_{0uz};
   static constexpr std::array<const char *, 8> SPINNER_FRAMES = {
       "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"};
 
   // Callback invoked when user quits
   std::function<void()> quit_callback_;
 
-  void render_loop(std::stop_token stoken);
-  void set_status(std::string_view message);
+  // Callback for packet processing (invoked in background thread)
+  std::function<void(std::stop_token)> packet_processor_;
+
+  void render_loop();
+  void set_status(std::string_view);
 };
 
 } // namespace tui

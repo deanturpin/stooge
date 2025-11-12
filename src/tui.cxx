@@ -1,8 +1,11 @@
 // Terminal UI implementation
 #include "tui.hxx"
 #include <algorithm>
+#include <cctype>
+#include <ctime>
 #include <format>
 #include <ftxui/component/component.hpp>
+#include <ftxui/component/loop.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <print>
@@ -12,18 +15,40 @@
 namespace tui {
 
 std::string endpoint_stats::to_string() const {
-  // Format: IP:port Protocol MAC Vendor Hostname Pkts
+  // Format: IP:port Protocol MAC/Vendor Hostname Pkts
   auto ip_port =
       std::string{port_ > 0 ? std::format("{}:{}", ip_, port_) : ip_};
-  auto mac_str = std::string{mac_address_.empty() ? "-" : mac_address_};
-  auto vendor_str = std::string{vendor_.empty() ? "-" : vendor_};
+
+  // Replace first part of MAC with vendor if available
+  auto mac_or_vendor = std::string{};
+  if (!vendor_.empty() && vendor_ != "-") {
+    // Extract alphanumeric chars from vendor (up to 8 chars)
+    auto vendor_clean = std::string{};
+    for (auto ch : vendor_) {
+      if (std::isalnum(static_cast<unsigned char>(ch))) {
+        vendor_clean += ch;
+        if (vendor_clean.length() >= 8)
+          break;
+      }
+    }
+
+    if (mac_address_.length() >= 17) {
+      // Extract last 3 octets (last 8 chars: :XX:XX:XX)
+      auto mac_suffix = mac_address_.substr(9); // Skip first "XX:XX:XX:"
+      mac_or_vendor = std::format("{:8}:{}", vendor_clean, mac_suffix);
+    } else {
+      mac_or_vendor = vendor_clean;
+    }
+  } else {
+    mac_or_vendor = mac_address_.empty() ? "-" : mac_address_;
+  }
+
   auto host_str =
       std::string{hostname_.empty() || hostname_ == ip_ ? "-" : hostname_};
 
-  return std::format("{:21} {:8} {:17} {:20} {:30} {:5}", ip_port.substr(0, 21),
-                     protocol_.substr(0, 8), mac_str.substr(0, 17),
-                     vendor_str.substr(0, 20), host_str.substr(0, 30),
-                     packet_count_);
+  return std::format("{:21} {:8} {:17} {:30} {:5}", ip_port.substr(0, 21),
+                     protocol_.substr(0, 8), mac_or_vendor.substr(0, 17),
+                     host_str.substr(0, 30), packet_count_);
 }
 
 // data_store implementation
@@ -33,19 +58,25 @@ void data_store::add_endpoint(std::string_view ip, uint16_t port,
                               std::string_view vendor,
                               std::string_view mac_address) {
   auto lock = std::scoped_lock{mutex_};
-  auto key = std::string{std::format("{}:{}:{}", ip, port, protocol)};
+
+  // Key includes MAC to distinguish source/dest endpoints with same IP:port
+  auto key = std::format("{}:{}:{}:{}", mac_address, ip, port, protocol);
 
   auto &ep = endpoints_[key];
   ep.ip_ = ip;
   ep.port_ = port;
   ep.protocol_ = protocol;
+
   if (!hostname.empty())
     ep.hostname_ = hostname;
+
   if (!vendor.empty())
     ep.vendor_ = vendor;
+
   if (!mac_address.empty())
     ep.mac_address_ = mac_address;
-  ep.packet_count_++;
+
+  ++ep.packet_count_;
   ep.last_seen_ = std::chrono::steady_clock::now();
 }
 
@@ -65,10 +96,31 @@ std::vector<endpoint_stats> data_store::get_endpoints() const {
   for (const auto &[key, ep] : endpoints_)
     result.push_back(ep);
 
-  // Sort by packet count (descending)
-  std::sort(result.begin(), result.end(), [](const auto &a, const auto &b) {
-    return a.packet_count_ > b.packet_count_;
-  });
+  // Sort: known vendors first, then resolved hostnames, then by packet count
+  std::stable_sort(
+      result.begin(), result.end(), [](const auto &a, const auto &b) {
+        auto a_has_vendor = !a.vendor_.empty() && a.vendor_ != "-";
+        auto b_has_vendor = !b.vendor_.empty() && b.vendor_ != "-";
+        auto a_has_hostname =
+            !a.hostname_.empty() && a.hostname_ != "-" && a.hostname_ != a.ip_;
+        auto b_has_hostname =
+            !b.hostname_.empty() && b.hostname_ != "-" && b.hostname_ != b.ip_;
+
+        // Priority 1: Known vendors first
+        if (a_has_vendor != b_has_vendor)
+          return a_has_vendor;
+
+        // Priority 2: Resolved hostnames (within same vendor group)
+        if (a_has_hostname != b_has_hostname)
+          return a_has_hostname;
+
+        // Priority 3: Sort by packet count
+        if (a.packet_count_ != b.packet_count_)
+          return a.packet_count_ > b.packet_count_;
+
+        // Priority 4: Tie-breaker by IP to prevent shuffling
+        return a.ip_ < b.ip_;
+      });
 
   return result;
 }
@@ -99,8 +151,27 @@ void data_store::set_capture_time(double current_seconds) {
   current_packet_time_.store(current_seconds);
 }
 
+void data_store::set_last_packet_timestamp(time_t seconds,
+                                           suseconds_t microseconds) {
+  // Store actual wall-clock timestamp from PCAP header
+  last_packet_timestamp_.store(seconds);
+}
+
 std::string data_store::get_time_display() const {
-  // Atomic read - no lock needed
+  // Get actual timestamp if available, otherwise fall back to elapsed time
+  auto timestamp = last_packet_timestamp_.load();
+
+  if (timestamp > 0) {
+    // Format actual wall-clock time from PCAP
+    auto tm_buf = std::tm{};
+    auto time_val = timestamp;
+    localtime_r(&time_val, &tm_buf);
+    auto buffer = std::array<char, 64>{};
+    std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", &tm_buf);
+    return buffer.data();
+  }
+
+  // Fallback: show elapsed time for live captures
   auto total_seconds = static_cast<int>(current_packet_time_.load());
   auto hours = total_seconds / 3600;
   auto minutes = (total_seconds % 3600) / 60;
@@ -172,31 +243,24 @@ renderer::renderer(std::shared_ptr<data_store> store) : store_(store) {}
 renderer::~renderer() { stop(); }
 
 void renderer::start() {
-  if (render_thread_.joinable())
-    return;
+  // Run render loop on main thread (blocks until user quits)
+  auto start_time = std::chrono::steady_clock::now();
+  try {
+    render_loop();
+  } catch (const std::exception &e) {
+    // Log error and ensure clean termination
+    std::print(stderr, "\nFatal error in render loop: {}\n", e.what());
+  } catch (...) {
+    std::print(stderr, "\nUnknown fatal error in render loop\n");
+  }
 
-  render_thread_ = std::jthread{[this](std::stop_token stoken) {
-    auto start_time = std::chrono::steady_clock::now();
-    try {
-      render_loop(stoken);
-    } catch (const std::exception &e) {
-      // Log error and ensure clean termination instead of std::terminate()
-      std::print(stderr, "\nFatal error in render thread: {}\n", e.what());
-    } catch (...) {
-      std::print(stderr, "\nUnknown fatal error in render thread\n");
-    }
-
-    auto duration = std::chrono::steady_clock::now() - start_time;
-    auto seconds =
-        std::chrono::duration_cast<std::chrono::seconds>(duration).count();
-    std::print(stderr, "Render thread exiting after {}s\n", seconds);
-  }};
+  auto duration = std::chrono::steady_clock::now() - start_time;
+  auto seconds =
+      std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+  std::print(stderr, "Render loop exited after {}s\n", seconds);
 }
 
 void renderer::stop() {
-  // Request stop via stop token (thread-safe, idempotent)
-  render_thread_.request_stop();
-
   // Exit the screen loop if it's still active
   if (screen_.has_value()) {
     try {
@@ -205,13 +269,12 @@ void renderer::stop() {
       // Suppress exceptions during shutdown
     }
   }
-
-  // jthread automatically joins on destruction, but explicit join is clearer
-  if (render_thread_.joinable())
-    render_thread_.join();
 }
 
-bool renderer::is_running() const { return render_thread_.joinable(); }
+bool renderer::is_running() const {
+  // Check if screen is active
+  return screen_active_.load();
+}
 
 void renderer::set_status(std::string_view message) {
   auto lock = std::scoped_lock{status_mutex_};
@@ -224,237 +287,214 @@ void renderer::set_quit_callback(std::function<void()> callback) {
   quit_callback_ = std::move(callback);
 }
 
-void renderer::render_loop(std::stop_token stoken) {
+void renderer::set_packet_processor(
+    std::function<void(std::stop_token)> processor) {
+  auto lock = std::scoped_lock{status_mutex_};
+  packet_processor_ = std::move(processor);
+}
+
+void renderer::render_loop() {
   using namespace ftxui;
 
   auto screen = ScreenInteractive::Fullscreen();
   screen_ = std::ref(screen); // Store screen reference for cleanup
+  screen_active_.store(true); // Mark screen as active
 
-  // Component that renders the UI
-  // Explicitly capture only what we need - this gives us member access
-  auto component = Renderer([this] {
-    // If help is shown, display help overlay
-    if (show_help_) {
-      auto help_lines = Elements{
-          text("Keyboard Shortcuts") | bold | center,
-          separator(),
-          text(""),
-          text("  q / Esc     Quit application"),
-          text("  Space / p   Pause/unpause display"),
-          text("  h / ?       Toggle this help"),
-          text("  Ctrl+C      Quit application"),
-          text(""),
-          text("Press any key to close") | dim | center,
-      };
+  // Enable mouse support for scrolling
+  screen.TrackMouse(true);
 
-      auto help_content = vbox(help_lines) | border | bgcolor(Color::Blue) |
-                          size(WIDTH, EQUAL, 40) | size(HEIGHT, EQUAL, 12) |
-                          center | vcenter;
+  // Start packet processing thread
+  // This thread will populate the data_store while the main thread renders
+  auto packet_thread = std::jthread{[this](std::stop_token st) {
+    std::print(stderr, "Packet processing thread started\n");
 
-      return help_content | clear_under;
+    // Invoke the packet processor callback if set
+    auto processor = std::function<void(std::stop_token)>{};
+    {
+      auto lock = std::scoped_lock{status_mutex_};
+      processor = packet_processor_;
     }
 
-    // Get current data (frozen if paused)
+    if (processor) {
+      processor(st);
+    } else {
+      std::print(stderr, "Warning: No packet processor callback set\n");
+    }
+
+    std::print(stderr, "Packet processing thread exiting\n");
+  }};
+
+  // Component that renders the UI with forced animation refresh
+  // Make component "animated" so FTXUI continuously calls render function
+  auto last_packet_count = std::atomic<size_t>{0uz};
+  auto force_refresh = std::atomic<bool>{true};
+
+  auto component = Renderer([this, &last_packet_count, &force_refresh] {
+    using namespace ftxui;
+
+    // Get data from store
     auto endpoints = store_->get_endpoints();
-    auto packets = store_->get_recent_packets(1000);
-    auto total = store_->get_total_packets();
+    auto packets = store_->get_recent_packets(50); // Last 50 packets
+    auto total_packets = store_->get_total_packets();
+    auto time_display = store_->get_time_display();
+    auto is_live = store_->is_live();
 
-    // Build endpoint list (left pane)
+    // Force component re-evaluation by checking if packet count changed
+    auto current_count = total_packets;
+    auto prev_count = last_packet_count.exchange(current_count);
+    (void)prev_count; // Suppress unused warning
+
+    // Build endpoint list (top pane)
     auto endpoint_elements = std::vector<Element>{};
-    endpoint_elements.push_back(text("Endpoints") | bold | color(Color::Cyan));
-    endpoint_elements.push_back(separator());
+    endpoint_elements.reserve(endpoints.size() + 1);
 
-    // Column headers
-    auto header = std::string{std::format("{:21} {:8} {:17} {:20} {:30} {:5}",
-                                          "IP:Port", "Protocol", "MAC",
-                                          "Vendor", "Hostname", "Pkts")};
+    // Endpoint header (no Vendor column - merged with MAC)
+    endpoint_elements.push_back(
+        text(std::format("{:21} {:8} {:17} {:30} {:5}", "IP:Port", "Protocol",
+                         "MAC/Vendor", "Hostname", "Pkts")) |
+        bold | color(Color::White));
 
-    // Add header line
-    endpoint_elements.push_back(text(header) | bold | color(Color::White));
-    endpoint_elements.push_back(separator());
-
-    // Add each endpoint
+    // Endpoint rows with protocol and vendor colourisation
     for (const auto &ep : endpoints) {
       auto ep_text = text(ep.to_string());
-      // Colourize by protocol
-      if (ep.protocol_ == "TCP")
+
+      // Colourise by vendor presence, then by protocol
+      auto has_vendor = !ep.vendor_.empty() && ep.vendor_ != "-";
+
+      if (has_vendor) {
+        // Known vendors in bright cyan to stand out
+        ep_text = ep_text | color(Color::Cyan);
+      } else if (ep.protocol_ == "TCP") {
         ep_text = ep_text | color(Color::Green);
-      else if (ep.protocol_ == "UDP")
+      } else if (ep.protocol_ == "UDP") {
         ep_text = ep_text | color(Color::Yellow);
-      else
+      } else {
         ep_text = ep_text | color(Color::White);
+      }
 
       endpoint_elements.push_back(ep_text);
     }
 
-    // Create vertical scrollable endpoint pane
     auto endpoint_pane =
-        vbox(endpoint_elements) | vscroll_indicator | frame | flex;
+        vbox(endpoint_elements) | vscroll_indicator | ftxui::frame | flex;
 
-    // Build packet list (right pane)
+    // Build packet list (bottom pane)
     auto packet_elements = std::vector<Element>{};
-    auto time_display = store_->get_time_display();
-    auto mode_text = std::string{store_->is_live() ? "LIVE" : "REPLAY"};
+    packet_elements.reserve(packets.size() + 1);
 
-    // Get current spinner frame (braille animation)
-    auto spinner = std::string{SPINNER_FRAMES[spinner_frame_]};
-    if (!paused_)
-      spinner_frame_ = (spinner_frame_ + 1) % SPINNER_FRAMES.size();
-
-    auto title =
-        paused_ ? std::format("{} PAUSED | Time: {}", mode_text, time_display)
-                : std::format("{} packets: {} | Time: {} {}", mode_text, total,
-                              time_display, spinner);
-    packet_elements.push_back(text(title) | bold |
-                              color(paused_ ? Color::Red : Color::Cyan));
-    packet_elements.push_back(separator());
-
-    // Column headers for packets
-    auto pkt_header =
-        std::string{std::format("{:8} {:8} {:22} {:22} {:10}", "Number",
-                                "Protocol", "Source", "Destination", "Bytes")};
-    packet_elements.push_back(text(pkt_header) | bold | color(Color::White));
-    packet_elements.push_back(separator());
+    // Calculate dynamic column widths based on actual data
+    auto max_src_width = 6uz;  // Minimum for "Source" header
+    auto max_dst_width = 11uz; // Minimum for "Destination" header
 
     for (const auto &pkt : packets) {
-      auto pkt_line =
-          text(std::format("{:<8d} {:<8} {:<22} {:<22} {:<10}", pkt.number_,
-                           pkt.protocol_, pkt.src_, pkt.dst_, pkt.bytes_));
+      max_src_width = std::max(max_src_width, pkt.src_.length());
+      max_dst_width = std::max(max_dst_width, pkt.dst_.length());
+    }
 
-      // Colourize by protocol
+    // Packet header with dynamic widths
+    packet_elements.push_back(
+        text(std::format("{:6} {:8} {:8} {:>{}} {:>{}} {:6}", "#", "Time",
+                         "Proto", "Source", max_src_width, "Destination",
+                         max_dst_width, "Bytes")) |
+        bold | color(Color::White));
+
+    // Packet rows with dynamic widths and protocol colourisation
+    for (const auto &pkt : packets) {
+      auto time_str = std::format("{:.3f}", pkt.timestamp_);
+      auto row =
+          text(std::format("{:<6} {:>8} {:8} {:>{}} {:>{}} {:>6}", pkt.number_,
+                           time_str, pkt.protocol_, pkt.src_, max_src_width,
+                           pkt.dst_, max_dst_width, pkt.bytes_));
+
+      // Colourise by protocol
       if (pkt.protocol_ == "TCP")
-        pkt_line = pkt_line | color(Color::Green);
+        row = row | color(Color::Green);
       else if (pkt.protocol_ == "UDP")
-        pkt_line = pkt_line | color(Color::Yellow);
+        row = row | color(Color::Yellow);
       else
-        pkt_line = pkt_line | color(Color::White);
+        row = row | color(Color::White);
 
-      packet_elements.push_back(pkt_line);
-
-      // Add dissection info if present
-      if (!pkt.dissection_.empty()) {
-        packet_elements.push_back(text("  └─ " + pkt.dissection_) |
-                                  color(Color::Magenta));
-      }
+      packet_elements.push_back(row);
     }
 
-    auto packet_pane = vbox(packet_elements) | vscroll_indicator | frame | flex;
+    auto packet_pane =
+        vbox(packet_elements) | vscroll_indicator | ftxui::frame | flex;
 
-    // Status bar with shortcuts hint and status message
-    // Check DNS status from data_store first, then renderer status
-    auto dns_status = store_->get_status();
-    auto status_msg = std::string{};
-    {
-      auto lock = std::scoped_lock{status_mutex_};
-      status_msg = status_message_;
-    }
+    // Title with mode indicator and spinner
+    auto frame = spinner_frame_.load();
+    auto spinner = std::string{SPINNER_FRAMES[frame]};
+    spinner_frame_.store((frame + 1) % SPINNER_FRAMES.size());
 
-    // Prioritise DNS status over renderer status
-    auto final_status = !dns_status.empty() ? dns_status : status_msg;
+    auto mode_str = is_live ? "LIVE" : "REPLAY";
+    auto title = text(std::format("{} {} | Time: {} | Packets: {}", spinner,
+                                  mode_str, time_display, total_packets)) |
+                 bold | color(Color::Cyan);
 
-    auto status_bar = Element{};
-    if (!final_status.empty()) {
-      // Show status message when present (DNS or renderer)
-      status_bar = hbox({text(final_status) | bold | color(Color::Yellow)}) |
-                   bgcolor(Color::GrayDark);
-    } else {
-      // Show shortcuts when no status message
-      status_bar = hbox({text("Shortcuts: ") | dim, text("q") | bold,
-                         text("/Esc=Quit ") | dim, text("Space") | bold,
-                         text("=Pause ") | dim, text("h") | bold,
-                         text("/?=Help") | dim}) |
-                   bgcolor(Color::GrayDark);
-    }
-
-    // Combine panes horizontally with status bar
+    // Two-column layout: endpoints left, packets right
     return vbox(
-        {hbox({endpoint_pane, separator(), packet_pane}) | border | flex,
-         status_bar});
+        {title, separator(),
+         hbox({endpoint_pane | flex, separator(), packet_pane | flex})});
   });
 
   // Capture component to handle keyboard shortcuts
-  // Capture this for member access, screen and stoken by reference (locals)
   auto component_with_shortcuts =
-      CatchEvent(component, [this, &screen, &stoken](Event event) {
+      CatchEvent(component, [this, &screen](Event event) {
+        // Allow mouse wheel scrolling but ignore mouse movement
+        if (event.is_mouse()) {
+          // Let scroll wheel events through for scrolling
+          if (event.mouse().button == Mouse::WheelUp ||
+              event.mouse().button == Mouse::WheelDown)
+            return false; // Let FTXUI handle scrolling
+
+          // Block other mouse events (movement, clicks)
+          return true;
+        }
+
         // Quit shortcuts: q, Esc, Ctrl+C
         if (event == Event::Character('q') || event == Event::Escape ||
             (event.is_character() && event.character() == "c" &&
              event.input() == "\x03")) {
-          render_thread_.request_stop();
           screen.Exit();
-          // Invoke quit callback to signal main loop to exit - but only after
-          // we've safely exited the screen loop to avoid double-free
-          // The callback will be invoked after screen.Loop() returns
-          return true;
-        }
-
-        // Toggle help: h or ?
-        if (event == Event::Character('h') || event == Event::Character('?')) {
-          show_help_ = !show_help_;
-          return true;
-        }
-
-        // Close help with any key when showing help
-        if (show_help_ && event.is_character()) {
-          show_help_ = false;
-          return true;
-        }
-
-        // Pause/unpause: space or p
-        if (event == Event::Character(' ') || event == Event::Character('p')) {
-          paused_ = !paused_;
           return true;
         }
 
         return false;
       });
 
-  // Refresh thread posts events periodically to trigger redraws
-  // This runs in parallel with screen.Loop() which blocks on event processing
-  auto refresh_thread = std::jthread{[this](std::stop_token st) {
-    auto start_time = std::chrono::steady_clock::now();
-    auto event_count = 0uz;
+  // Manual render loop - post events from main thread after each frame
+  // This avoids threading bugs while still achieving auto-refresh
+  auto loop = ftxui::Loop(&screen, component_with_shortcuts);
 
-    while (!st.stop_requested()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      if (!paused_ && screen_.has_value()) {
-        try {
-          screen_->get().PostEvent(Event::Custom);
-          event_count++;
-        } catch (...) {
-          // PostEvent failed during shutdown - exit gracefully
-          break;
-        }
-      }
-    }
+  while (!loop.HasQuitted()) {
+    // Post event to queue for next iteration (safe - same thread)
+    screen.Post(ftxui::Event::Custom);
 
-    auto duration = std::chrono::steady_clock::now() - start_time;
-    auto seconds =
-        std::chrono::duration_cast<std::chrono::seconds>(duration).count();
-    std::print(stderr, "Refresh thread exiting after {}s ({} events posted)\n",
-               seconds, event_count);
-  }};
+    // Process the event we just posted (draws frame)
+    loop.RunOnce();
 
-  screen.Loop(component_with_shortcuts);
+    // Limit to ~10 FPS
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  // Mark screen as inactive and clear reference to prevent refresh thread
+  // access
+  screen_active_.store(false);
+  screen_.reset();
 
   set_status("Shutting down...");
 
   // Reset terminal to clean up any leftover escape codes
-  // Note: screen_ will naturally become invalid when local screen destructs
   std::print("\033[0m\033[?25h"); // Reset attributes and show cursor
 
-  // Invoke quit callback after all cleanup is complete to avoid double-free
-  // This ensures the renderer is fully stopped before main loop exits
-  // Use local copy with mutex protection to avoid race with main thread
-  auto callback_copy = std::function<void()>{};
-  {
-    auto lock =
-        std::scoped_lock{status_mutex_}; // Reuse status_mutex for simplicity
-    if (quit_callback_)
-      callback_copy = quit_callback_;
-  }
-  if (callback_copy)
-    callback_copy();
+  // Quit callback disabled for testing - suspected double-free issue
+  // auto callback_copy = std::function<void()>{};
+  // {
+  //   auto lock = std::scoped_lock{status_mutex_};
+  //   if (quit_callback_)
+  //     callback_copy = quit_callback_;
+  // }
+  // if (callback_copy)
+  //   callback_copy();
 }
 
 } // namespace tui

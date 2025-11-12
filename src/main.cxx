@@ -342,6 +342,13 @@ int main(int argc, char *argv[]) {
   // Start DNS resolver thread to work on endpoint map (with 2s timeout)
   dns::start_resolver(tui_store);
 
+  // Packet iteration state (shared between TUI and non-TUI modes)
+  auto header = static_cast<struct pcap_pkthdr *>(nullptr);
+  auto packet = static_cast<const u_char *>(nullptr);
+  auto packet_count = 0uz;
+  auto start_time = std::optional<std::chrono::steady_clock::time_point>{};
+  auto first_packet_time = std::optional<struct timeval>{};
+
   if (use_tui) {
     tui_renderer = std::make_shared<tui::renderer>(tui_store);
     {
@@ -350,11 +357,135 @@ int main(int argc, char *argv[]) {
     }
 
     // Set quit callback to stop packet capture when user presses q/Esc
-    // Capture nothing - stop_capture is a global, so no capture needed
     tui_renderer->set_quit_callback([]() { stop_capture = 1; });
 
+    // Set packet processor callback - this runs in background thread
+    tui_renderer->set_packet_processor([&](std::stop_token st) {
+      // Packet processing loop (runs in background thread)
+      auto capture_result = 0;
+      try {
+        tui_store->set_status("DEBUG: Starting packet processing loop");
+
+        while (!stop_capture && !st.stop_requested() &&
+               (capture_result =
+                    pcap_next_ex(handle.get(), &header, &packet)) >= 0) {
+          if (capture_result == 0)
+            continue; // Timeout, try again
+          if (capture_result == -2)
+            break; // End of file
+
+          packet_count++;
+
+          if (packet_count % 100 == 0)
+            tui_store->set_status(
+                std::format("Processing packet {}", packet_count));
+
+          auto packet_offset = 0.0;
+
+          // Timing logic for replay vs live mode
+          if (!live_mode) {
+            if (!first_packet_time) {
+              first_packet_time = header->ts;
+              start_time = std::chrono::steady_clock::now();
+            }
+
+            packet_offset =
+                (header->ts.tv_sec - first_packet_time->tv_sec) +
+                (header->ts.tv_usec - first_packet_time->tv_usec) / 1000000.0;
+
+            auto scaled_offset =
+                std::chrono::duration<double>(packet_offset / SPEEDUP_FACTOR);
+            auto target_time =
+                *start_time +
+                std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                    scaled_offset);
+
+            std::this_thread::sleep_until(target_time);
+          } else {
+            if (!start_time)
+              start_time = std::chrono::steady_clock::now();
+
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                               now - *start_time)
+                               .count();
+            packet_offset = static_cast<double>(elapsed);
+          }
+
+          if (start_time)
+            tui_store->set_capture_time(packet_offset);
+
+          // Store actual wall-clock timestamp from PCAP header
+          tui_store->set_last_packet_timestamp(header->ts.tv_sec,
+                                               header->ts.tv_usec);
+
+          auto info = parse_packet(packet, header);
+          if (info) {
+            auto src_vendor = oui::lookup_vendor(info->src_mac_);
+            auto dst_vendor = oui::lookup_vendor(info->dst_mac_);
+
+            auto src_mac_str = std::format(
+                "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", info->src_mac_[0],
+                info->src_mac_[1], info->src_mac_[2], info->src_mac_[3],
+                info->src_mac_[4], info->src_mac_[5]);
+            auto dst_mac_str = std::format(
+                "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", info->dst_mac_[0],
+                info->dst_mac_[1], info->dst_mac_[2], info->dst_mac_[3],
+                info->dst_mac_[4], info->dst_mac_[5]);
+
+            tui_store->add_endpoint(info->src_ip_, info->src_port_,
+                                    info->protocol_, "", src_vendor,
+                                    src_mac_str);
+            tui_store->add_endpoint(info->dst_ip_, info->dst_port_,
+                                    info->protocol_, "", dst_vendor,
+                                    dst_mac_str);
+
+            dns::notify_new_work();
+
+            auto format_endpoint = [](std::string_view ip, uint16_t port) {
+              if (port == 0)
+                return std::string{ip};
+
+              auto service = port_to_service(port);
+              auto port_display = service.empty()
+                                      ? std::format("{}", port)
+                                      : std::format("{}/{}", port, service);
+
+              return std::format("{}:{}", ip, port_display);
+            };
+
+            auto pkt = tui::packet_entry{};
+            pkt.number_ = packet_count;
+            pkt.timestamp_ = packet_offset;
+            pkt.protocol_ = info->protocol_;
+            pkt.src_ = format_endpoint(info->src_ip_, info->src_port_);
+            pkt.dst_ = format_endpoint(info->dst_ip_, info->dst_port_);
+            pkt.bytes_ = info->length_;
+
+            if (info->payload_ && info->payload_length_ > 0) {
+              auto dissected = dissectors.dissect(
+                  info->payload_, info->payload_length_, info->src_port_,
+                  info->dst_port_, info->protocol_);
+              if (dissected)
+                pkt.dissection_ = std::format("{} {}", dissected->protocol_,
+                                              dissected->info_);
+            }
+
+            if (packet_count % 500 == 0)
+              tui_store->set_status(std::format("Last packet: {} {} → {}",
+                                                pkt.protocol_, pkt.src_,
+                                                pkt.dst_));
+
+            tui_store->add_packet(pkt);
+          }
+        }
+      } catch (const std::exception &e) {
+        std::print(stderr, "Packet processing error: {}\n", e.what());
+      }
+    });
+
     // Start TUI renderer - this will take over the screen
-    // Wrap in try-catch to handle terminal/TTY errors gracefully
+    // The packet processor will run in background thread
     try {
       tui_renderer->start();
     } catch (const std::exception &e) {
@@ -369,234 +500,98 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // Packet iteration state
-  auto header = static_cast<struct pcap_pkthdr *>(nullptr);
-  auto packet = static_cast<const u_char *>(nullptr);
-  auto packet_count = 0uz;
-  auto start_time = std::optional<std::chrono::steady_clock::time_point>{};
-  auto first_packet_time = std::optional<struct timeval>{};
-
-  // Process packets with error handling
+  // Process packets with error handling (non-TUI mode only)
+  // In TUI mode, packet processing happens in background thread
   auto capture_result = 0;
-  try {
-    if (use_tui)
-      tui_store->set_status("DEBUG: Starting packet processing loop");
 
-    // Check if handle is valid before processing packets
-    if (handle == nullptr) {
-      std::print("Error: Invalid pcap handle\n");
-      return 1;
-    }
-
-    while (!stop_capture && (capture_result = pcap_next_ex(
-                                 handle.get(), &header, &packet)) >= 0) {
-      // Handle pcap_next_ex return values:
-      // 1 = packet read successfully
-      // 0 = timeout elapsed (live capture)
-      // -1 = error
-      // -2 = end of file (savefile)
-      if (capture_result == 0)
-        continue; // Timeout, try again
-
-      if (capture_result == -2)
-        break; // End of file (normal for replay mode)
-
-      packet_count++;
-
-      // Periodic status updates every 100 packets to track progress
-      if (use_tui && packet_count % 100 == 0)
-        tui_store->set_status(
-            std::format("Processing packet {}", packet_count));
-
-      auto packet_offset = 0.0;
-
-      // Only do timing for replay mode
-      if (!live_mode) {
-        // Record start time on first packet
-        if (!first_packet_time) {
-          first_packet_time = header->ts;
-          start_time = std::chrono::steady_clock::now();
-        }
-
-        // Calculate time offset from first packet
-        packet_offset =
-            (header->ts.tv_sec - first_packet_time->tv_sec) +
-            (header->ts.tv_usec - first_packet_time->tv_usec) / 1000000.0;
-
-        // Scale the delay and calculate target wake time
-        auto scaled_offset =
-            std::chrono::duration<double>(packet_offset / SPEEDUP_FACTOR);
-        auto target_time =
-            *start_time +
-            std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                scaled_offset);
-
-        // Sleep until it's time to display this packet
-        std::this_thread::sleep_until(target_time);
-      } else {
-        // Live mode - initialise start time on first packet
-        if (!start_time)
-          start_time = std::chrono::steady_clock::now();
-
-        // Calculate elapsed time since first packet for live mode
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed =
-            std::chrono::duration_cast<std::chrono::seconds>(now - *start_time)
-                .count();
-        packet_offset = static_cast<double>(elapsed);
+  if (!use_tui) {
+    try {
+      // Check if handle is valid before processing packets
+      if (handle == nullptr) {
+        std::print("Error: Invalid pcap handle\n");
+        return 1;
       }
 
-      // Update TUI clock with current timing
-      if (start_time)
-        tui_store->set_capture_time(packet_offset);
+      while (!stop_capture && (capture_result = pcap_next_ex(
+                                   handle.get(), &header, &packet)) >= 0) {
+        // Handle pcap_next_ex return values:
+        // 1 = packet read successfully
+        // 0 = timeout elapsed (live capture)
+        // -1 = error
+        // -2 = end of file (savefile)
+        if (capture_result == 0)
+          continue; // Timeout, try again
 
-      // Parse and display packet information
-      if (use_tui && packet_count % 1000 == 1)
-        tui_store->set_status(
-            std::format("DEBUG: Parsing packet {}", packet_count));
+        if (capture_result == -2)
+          break; // End of file (normal for replay mode)
 
-      auto info = parse_packet(packet, header);
-      if (info) {
-        // Add endpoint information to TUI
-        // Note: DNS resolution happens in background thread
-        if (use_tui && packet_count % 1000 == 1)
-          tui_store->set_status(std::format(
-              "DEBUG: Looking up vendors for packet {}", packet_count));
+        packet_count++;
 
-        auto src_vendor = oui::lookup_vendor(info->src_mac_);
-        auto dst_vendor = oui::lookup_vendor(info->dst_mac_);
+        // Timing for replay mode (honour original packet timing)
+        if (!live_mode) {
+          if (!first_packet_time) {
+            first_packet_time = header->ts;
+            start_time = std::chrono::steady_clock::now();
+          }
 
-        // Format MAC addresses
-        auto src_mac_str = std::format(
-            "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", info->src_mac_[0],
-            info->src_mac_[1], info->src_mac_[2], info->src_mac_[3],
-            info->src_mac_[4], info->src_mac_[5]);
-        auto dst_mac_str = std::format(
-            "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", info->dst_mac_[0],
-            info->dst_mac_[1], info->dst_mac_[2], info->dst_mac_[3],
-            info->dst_mac_[4], info->dst_mac_[5]);
+          auto packet_offset =
+              (header->ts.tv_sec - first_packet_time->tv_sec) +
+              (header->ts.tv_usec - first_packet_time->tv_usec) / 1000000.0;
 
-        tui_store->add_endpoint(info->src_ip_, info->src_port_, info->protocol_,
-                                "", src_vendor, src_mac_str);
-        tui_store->add_endpoint(info->dst_ip_, info->dst_port_, info->protocol_,
-                                "", dst_vendor, dst_mac_str);
+          auto scaled_offset =
+              std::chrono::duration<double>(packet_offset / SPEEDUP_FACTOR);
+          auto target_time =
+              *start_time +
+              std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                  scaled_offset);
 
-        // Notify DNS thread that new endpoints may need resolution
-        dns::notify_new_work();
-
-        // Build packet entry
-        if (use_tui && packet_count % 1000 == 1)
-          tui_store->set_status(std::format(
-              "DEBUG: Formatting endpoints for packet {}", packet_count));
-
-        auto format_endpoint = [](std::string_view ip, uint16_t port) {
-          if (port == 0)
-            return std::string{ip};
-
-          auto service = port_to_service(port);
-          auto port_display = service.empty()
-                                  ? std::format("{}", port)
-                                  : std::format("{}/{}", port, service);
-
-          return std::format("{}:{}", ip, port_display);
-        };
-
-        auto pkt = tui::packet_entry{};
-        pkt.number_ = packet_count;
-        pkt.timestamp_ = packet_offset;
-        pkt.protocol_ = info->protocol_;
-        pkt.src_ = format_endpoint(info->src_ip_, info->src_port_);
-        pkt.dst_ = format_endpoint(info->dst_ip_, info->dst_port_);
-        pkt.bytes_ = info->length_;
-
-        // Try to dissect application-layer protocol
-        if (info->payload_ && info->payload_length_ > 0) {
-          if (use_tui && packet_count % 1000 == 1)
-            tui_store->set_status(std::format(
-                "DEBUG: Dissecting payload for packet {}", packet_count));
-
-          auto dissected = dissectors.dissect(
-              info->payload_, info->payload_length_, info->src_port_,
-              info->dst_port_, info->protocol_);
-          if (dissected)
-            pkt.dissection_ =
-                std::format("{} {}", dissected->protocol_, dissected->info_);
+          std::this_thread::sleep_until(target_time);
         }
 
-        // Show last packet details every 500 packets
-        if (use_tui && packet_count % 500 == 0)
-          tui_store->set_status(std::format("Last packet: {} {} → {}",
-                                            pkt.protocol_, pkt.src_, pkt.dst_));
+        // Parse and display packet information (non-TUI text mode)
+        auto info = parse_packet(packet, header);
+        if (info) {
+          auto format_endpoint = [](std::string_view ip, uint16_t port) {
+            if (port == 0)
+              return std::string{ip};
 
-        tui_store->add_packet(pkt);
+            auto service = port_to_service(port);
+            auto port_display = service.empty()
+                                    ? std::format("{}", port)
+                                    : std::format("{}/{}", port, service);
 
-        // Print text output if TUI is disabled
-        if (!use_tui) {
-          std::print("[{}] {} {} → {} ({} bytes)", pkt.number_, pkt.protocol_,
-                     pkt.src_, pkt.dst_, pkt.bytes_);
-          if (!pkt.dissection_.empty())
-            std::print(" | {}", pkt.dissection_);
+            return std::format("{}:{}", ip, port_display);
+          };
+
+          auto src = format_endpoint(info->src_ip_, info->src_port_);
+          auto dst = format_endpoint(info->dst_ip_, info->dst_port_);
+
+          std::print("[{}] {} {} → {} ({} bytes)", packet_count,
+                     info->protocol_, src, dst, info->length_);
+
+          // Try to dissect application-layer protocol
+          if (info->payload_ && info->payload_length_ > 0) {
+            auto dissected = dissectors.dissect(
+                info->payload_, info->payload_length_, info->src_port_,
+                info->dst_port_, info->protocol_);
+            if (dissected)
+              std::print(" | {} {}", dissected->protocol_, dissected->info_);
+          }
+
           std::print("\n");
         }
       }
+    } catch (const std::exception &e) {
+      std::print("\n\nFatal error during packet processing at packet {}: {}\n",
+                 packet_count, e.what());
+      dns::stop_resolver();
+      return 1;
+    } catch (...) {
+      std::print(
+          "\n\nFatal error during packet processing (unknown exception)\n");
+      dns::stop_resolver();
+      return 1;
     }
-  } catch (const std::bad_function_call &e) {
-    // Specific handling for bad_function_call - likely lambda/function object
-    // issue
-    if (use_tui && tui_renderer) {
-      try {
-        tui_renderer->stop();
-      } catch (...) {
-        // Suppress cleanup exceptions
-      }
-    }
-    {
-      auto lock = std::scoped_lock{global_renderer_mutex};
-      global_renderer.reset();
-    }
-    std::print("\n\nFatal error: bad_function_call at packet {}\n",
-               packet_count);
-    std::print("Error details: {}\n", e.what());
-    std::print(
-        "This indicates a null or invalid function object was called.\n");
-    std::print("Last operation was processing packet {} in {} mode.\n",
-               packet_count, live_mode ? "LIVE" : "REPLAY");
-    dns::stop_resolver();
-    return 1;
-  } catch (const std::exception &e) {
-    // Ensure TUI is stopped before handling exception
-    if (use_tui && tui_renderer) {
-      try {
-        tui_renderer->stop();
-      } catch (...) {
-        // Suppress cleanup exceptions
-      }
-    }
-    {
-      auto lock = std::scoped_lock{global_renderer_mutex};
-      global_renderer.reset();
-    }
-    std::print("\n\nFatal error during packet processing at packet {}: {}\n",
-               packet_count, e.what());
-    dns::stop_resolver();
-    return 1;
-  } catch (...) {
-    // Catch any other exceptions (non-std::exception)
-    if (use_tui && tui_renderer) {
-      try {
-        tui_renderer->stop();
-      } catch (...) {
-        // Suppress cleanup exceptions
-      }
-    }
-    {
-      auto lock = std::scoped_lock{global_renderer_mutex};
-      global_renderer.reset();
-    }
-    std::print(
-        "\n\nFatal error during packet processing (unknown exception)\n");
-    dns::stop_resolver();
-    return 1;
   }
 
   // Stop TUI renderer gracefully

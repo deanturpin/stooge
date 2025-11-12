@@ -1,8 +1,6 @@
 # stooge
 
-**⚠️ Work in Progress - Early Development**
-
-Network traffic replayer with Lua dissector support - replay PCAP files with timing preservation and protocol analysis.
+Network traffic replayer with Lua dissector support: replay PCAP files with timing preservation and protocol analysis. Also supports live capture mode.
 
 **Source:** [github.com/deanturpin/stooge](https://github.com/deanturpin/stooge)
 
@@ -24,7 +22,7 @@ docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW --net=host deanturpin/stoo
 
 - Split-screen terminal UI with colour-coded packet display
 - Replays network traffic from Wireshark PCAP files
-- Preserves original packet timing (configurable speed multiplier)
+- Preserves original packet timing during replay
 - Background DNS reverse lookups for hostname resolution
 - Lua dissector support (DNS, HTTP) for protocol analysis
 - Live capture mode for real-time traffic monitoring
