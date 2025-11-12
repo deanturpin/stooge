@@ -67,6 +67,9 @@ public:
   // Get packets per second rate
   double get_packets_per_second() const;
 
+  // Get bits per second rate
+  double get_bits_per_second() const;
+
   // Set capture mode (live vs replay) - call once during initialization
   void set_capture_mode(bool is_live);
 
@@ -106,7 +109,20 @@ private:
   std::map<std::string, endpoint_stats> endpoints_; // Key: "ip:port:protocol"
   std::deque<packet_entry> packets_;
   std::atomic<size_t> total_packets_{0uz};    // Lock-free counter
+  std::atomic<size_t> total_bytes_{0uz};      // Lock-free byte counter
   static constexpr auto MAX_PACKETS = 1000uz; // Ringbuffer size
+
+  // Rolling bandwidth calculation (last 5 seconds)
+  struct bandwidth_sample {
+    std::chrono::steady_clock::time_point timestamp;
+    size_t bytes;
+  };
+  std::deque<bandwidth_sample> bandwidth_samples_;
+  static constexpr auto BANDWIDTH_WINDOW = std::chrono::seconds{5};
+
+  // Rolling packet rate calculation (last 5 seconds)
+  std::deque<std::chrono::steady_clock::time_point> packet_timestamps_;
+  static constexpr auto PACKET_RATE_WINDOW = std::chrono::seconds{5};
 
   // Timing information (lock-free atomics)
   std::atomic<double> current_packet_time_{

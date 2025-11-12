@@ -466,9 +466,28 @@ int main(int argc, char *argv[]) {
     // Use "any" pseudo-device to capture from all interfaces
     auto dev_name = std::string{"any"};
 
-    // Open live capture
-    handle.reset(
-        pcap_open_live(dev_name.c_str(), 65535, 1, 1000, errbuf.data()));
+    // Create capture handle (allows setting buffer size before activation)
+    auto *temp_handle = pcap_create(dev_name.c_str(), errbuf.data());
+    if (!temp_handle) {
+      std::print("Error creating capture handle for {}: {}\n", dev_name,
+                 errbuf.data());
+      return 1;
+    }
+
+    // Set large buffer to handle high-speed bursts (32MB)
+    pcap_set_snaplen(temp_handle, 65535); // Capture full packets
+    pcap_set_promisc(temp_handle, 0);    // "any" device doesn't support promisc
+    pcap_set_timeout(temp_handle, 1000); // 1 second timeout
+    pcap_set_buffer_size(temp_handle, 32 * 1024 * 1024); // 32MB buffer
+
+    // Activate the capture
+    if (pcap_activate(temp_handle) != 0) {
+      std::print("Error activating capture: {}\n", pcap_geterr(temp_handle));
+      pcap_close(temp_handle);
+      return 1;
+    }
+
+    handle.reset(temp_handle);
 
     if (!handle) {
       std::print("Error opening interface {}: {}\n", dev_name, errbuf.data());

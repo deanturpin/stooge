@@ -14,6 +14,17 @@
 
 namespace tui {
 
+namespace {
+// Case-insensitive substring search
+bool contains_case_insensitive(std::string_view haystack,
+                               std::string_view needle) {
+  auto it = std::search(
+      haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+      [](char a, char b) { return std::tolower(a) == std::tolower(b); });
+  return it != haystack.end();
+}
+} // anonymous namespace
+
 std::string endpoint_stats::to_string() const {
   // Format: IP:port Protocol MAC/Vendor Hostname Pkts
   auto ip_port =
@@ -57,6 +68,10 @@ void data_store::add_endpoint(std::string_view ip, uint16_t port,
                               std::string_view hostname,
                               std::string_view vendor,
                               std::string_view mac_address) {
+  // Skip Xerox devices (SSDP broadcast spam)
+  if (contains_case_insensitive(vendor, "xerox"))
+    return;
+
   auto lock = std::scoped_lock{mutex_};
 
   // Key includes MAC to distinguish source/dest endpoints with same IP:port
@@ -86,6 +101,27 @@ void data_store::add_packet(const packet_entry &entry) {
   if (packets_.size() > MAX_PACKETS)
     packets_.pop_front();
   total_packets_++;
+  total_bytes_ += entry.bytes_;
+
+  auto now = std::chrono::steady_clock::now();
+
+  // Add bandwidth sample for rolling calculation
+  bandwidth_samples_.push_back({now, entry.bytes_});
+
+  // Remove bandwidth samples older than the window
+  auto bandwidth_cutoff = now - BANDWIDTH_WINDOW;
+  while (!bandwidth_samples_.empty() &&
+         bandwidth_samples_.front().timestamp < bandwidth_cutoff)
+    bandwidth_samples_.pop_front();
+
+  // Add packet timestamp for rate calculation
+  packet_timestamps_.push_back(now);
+
+  // Remove packet timestamps older than the window
+  auto rate_cutoff = now - PACKET_RATE_WINDOW;
+  while (!packet_timestamps_.empty() &&
+         packet_timestamps_.front() < rate_cutoff)
+    packet_timestamps_.pop_front();
 }
 
 std::vector<endpoint_stats> data_store::get_endpoints() const {
@@ -142,15 +178,62 @@ size_t data_store::get_total_packets() const {
 }
 
 double data_store::get_packets_per_second() const {
-  auto elapsed = std::chrono::steady_clock::now() - start_time_;
-  auto seconds =
-      std::chrono::duration_cast<std::chrono::duration<double>>(elapsed)
-          .count();
+  auto lock = std::scoped_lock{mutex_};
 
-  if (seconds < 0.001)
+  if (packet_timestamps_.empty())
     return 0.0;
 
-  return static_cast<double>(total_packets_.load()) / seconds;
+  // Calculate elapsed time since first packet, capped at window size
+  auto now = std::chrono::steady_clock::now();
+  auto elapsed = now - packet_timestamps_.front();
+
+  // Cap at window size to prevent rate from decreasing as timestamps age out
+  auto window_seconds =
+      std::chrono::duration_cast<std::chrono::duration<double>>(
+          PACKET_RATE_WINDOW)
+          .count();
+  auto elapsed_seconds =
+      std::chrono::duration_cast<std::chrono::duration<double>>(elapsed)
+          .count();
+  auto seconds = std::min(elapsed_seconds, window_seconds);
+
+  // Need at least 0.1 seconds of data for meaningful rate
+  if (seconds < 0.1)
+    return 0.0;
+
+  return static_cast<double>(packet_timestamps_.size()) / seconds;
+}
+
+double data_store::get_bits_per_second() const {
+  auto lock = std::scoped_lock{mutex_};
+
+  if (bandwidth_samples_.empty())
+    return 0.0;
+
+  // Calculate total bytes in the window
+  auto total_bytes = 0uz;
+  for (const auto &sample : bandwidth_samples_)
+    total_bytes += sample.bytes;
+
+  // Calculate elapsed time since first sample, capped at window size
+  auto now = std::chrono::steady_clock::now();
+  auto elapsed = now - bandwidth_samples_.front().timestamp;
+
+  // Cap at window size to prevent rate from decreasing as samples age out
+  auto window_seconds =
+      std::chrono::duration_cast<std::chrono::duration<double>>(
+          BANDWIDTH_WINDOW)
+          .count();
+  auto elapsed_seconds =
+      std::chrono::duration_cast<std::chrono::duration<double>>(elapsed)
+          .count();
+  auto seconds = std::min(elapsed_seconds, window_seconds);
+
+  // Need at least 0.1 seconds of data for meaningful rate
+  if (seconds < 0.1)
+    return 0.0;
+
+  return static_cast<double>(total_bytes) * 8.0 / seconds;
 }
 
 void data_store::set_capture_mode(bool is_live) {
@@ -351,6 +434,7 @@ void renderer::render_loop() {
     auto time_display = store_->get_time_display();
     auto is_live = store_->is_live();
     auto pps = store_->get_packets_per_second();
+    auto bps = store_->get_bits_per_second();
 
     // Force component re-evaluation by checking if packet count changed
     auto current_count = total_packets;
@@ -464,9 +548,21 @@ void renderer::render_loop() {
     spinner_frame_.store((frame + 1) % SPINNER_FRAMES.size());
 
     auto mode_str = is_live ? "LIVE" : "REPLAY";
+
+    // Format b/s with appropriate units (Kb/s, Mb/s, Gb/s)
+    auto bps_str = std::string{};
+    if (bps >= 1'000'000'000.0)
+      bps_str = std::format("{:.2f} Gb/s", bps / 1'000'000'000.0);
+    else if (bps >= 1'000'000.0)
+      bps_str = std::format("{:.2f} Mb/s", bps / 1'000'000.0);
+    else if (bps >= 1'000.0)
+      bps_str = std::format("{:.2f} Kb/s", bps / 1'000.0);
+    else
+      bps_str = std::format("{:.0f} b/s", bps);
+
     auto title =
-        text(std::format("{} {} | Time: {} | Packets: {} | Rate: {:.1f} pps",
-                         spinner, mode_str, time_display, total_packets, pps)) |
+        text(std::format("{} {} | {} | Packets: {} | {:.1f} p/s | {}", spinner,
+                         mode_str, time_display, total_packets, pps, bps_str)) |
         bold | color(Color::Cyan);
 
     // Two-column layout: endpoints left, packets right
