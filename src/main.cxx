@@ -639,10 +639,9 @@ int main(int argc, char *argv[]) {
             // Only add endpoints for known protocols (IPv4, IPv6, ARP)
             // Skip generic unknown EtherType packets (protocol starts with
             // "0x")
+            // Only track destination endpoints (servers) to avoid ephemeral
+            // client port clutter
             if (!info->protocol_.starts_with("0x")) {
-              tui_store->add_endpoint(info->src_ip_, info->src_port_,
-                                      info->protocol_, "", src_vendor,
-                                      src_mac_str);
               tui_store->add_endpoint(info->dst_ip_, info->dst_port_,
                                       info->protocol_, "", dst_vendor,
                                       dst_mac_str);

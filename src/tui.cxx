@@ -14,17 +14,6 @@
 
 namespace tui {
 
-namespace {
-// Case-insensitive substring search
-bool contains_case_insensitive(std::string_view haystack,
-                               std::string_view needle) {
-  auto it = std::search(
-      haystack.begin(), haystack.end(), needle.begin(), needle.end(),
-      [](char a, char b) { return std::tolower(a) == std::tolower(b); });
-  return it != haystack.end();
-}
-} // anonymous namespace
-
 std::string endpoint_stats::to_string() const {
   // Format: IP:port Protocol MAC/Vendor Hostname Pkts
   auto ip_port =
@@ -68,10 +57,6 @@ void data_store::add_endpoint(std::string_view ip, uint16_t port,
                               std::string_view hostname,
                               std::string_view vendor,
                               std::string_view mac_address) {
-  // Skip Xerox devices (SSDP broadcast spam)
-  if (contains_case_insensitive(vendor, "xerox"))
-    return;
-
   auto lock = std::scoped_lock{mutex_};
 
   // Key includes MAC to distinguish source/dest endpoints with same IP:port
