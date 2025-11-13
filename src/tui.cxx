@@ -68,10 +68,6 @@ void data_store::add_endpoint(std::string_view ip, uint16_t port,
                               std::string_view hostname,
                               std::string_view vendor,
                               std::string_view mac_address) {
-  // Skip Xerox devices (SSDP broadcast spam)
-  if (contains_case_insensitive(vendor, "xerox"))
-    return;
-
   auto lock = std::scoped_lock{mutex_};
 
   // Key includes MAC to distinguish source/dest endpoints with same IP:port
