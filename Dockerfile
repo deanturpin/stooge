@@ -1,7 +1,7 @@
 # Multi-stage Docker build for stooge network traffic replayer
 FROM ubuntu:devel
 
-# Install build tools (ubuntu:devel has latest GCC)
+# Install build tools and network diagnostics (ubuntu:devel has latest GCC)
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -13,6 +13,13 @@ RUN apt-get update && apt-get install -y \
     git \
     catch2 \
     ieee-data \
+    iputils-ping \
+    nmap \
+    curl \
+    wget \
+    tcpdump \
+    netcat-openbsd \
+    dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 # Install FTXUI for terminal UI
