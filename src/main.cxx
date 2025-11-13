@@ -368,6 +368,36 @@ std::optional<packet_info> parse_generic(const u_char *packet,
   return info;
 }
 
+// Discover available network interfaces, excluding pseudo-devices
+std::vector<std::string> discover_interfaces() {
+  auto names = std::vector<std::string>{};
+
+  pcap_if_t *all_devices = nullptr;
+  auto errbuf = std::array<char, PCAP_ERRBUF_SIZE>{};
+
+  if (pcap_findalldevs(&all_devices, errbuf.data()) < 0)
+    return names;
+
+  // Exclude pseudo-devices and special interfaces
+  constexpr auto excludes = std::array{
+      "any",        "nflog",       "nfqueue",      "bluetooth-monitor",
+      "bluetooth0", "dbus-system", "dbus-session", "lo"};
+
+  for (auto dev = all_devices; dev != nullptr; dev = dev->next) {
+    auto name = std::string{dev->name};
+
+    // Skip excluded interfaces
+    auto excluded = std::any_of(excludes.begin(), excludes.end(),
+                                [&name](auto ex) { return name == ex; });
+
+    if (!excluded)
+      names.emplace_back(name);
+  }
+
+  pcap_freealldevs(all_devices);
+  return names;
+}
+
 // Parse raw packet data into structured packet_info
 // Returns packet_info for all EtherTypes (IPv4, IPv6, ARP, and unknown)
 std::optional<packet_info> parse_packet(const u_char *packet,
@@ -463,8 +493,20 @@ int main(int argc, char *argv[]) {
     // Live mode - capture from default interface
     live_mode = true;
 
-    // Use "any" pseudo-device to capture from all interfaces
-    auto dev_name = std::string{"any"};
+    // Discover available interfaces and use first real one
+    auto interfaces = discover_interfaces();
+    if (interfaces.empty()) {
+      std::print("Error: no suitable network interfaces found\n");
+      std::print("Tried to discover interfaces excluding: any, nflog, "
+                 "bluetooth, lo\n");
+      return 1;
+    }
+
+    auto dev_name = interfaces[0]; // Use first discovered interface
+    std::print("Discovered interfaces: ");
+    for (const auto &iface : interfaces)
+      std::print("{} ", iface);
+    std::print("\nUsing interface: {}\n", dev_name);
 
     // Create capture handle (allows setting buffer size before activation)
     auto *temp_handle = pcap_create(dev_name.c_str(), errbuf.data());
@@ -476,8 +518,8 @@ int main(int argc, char *argv[]) {
 
     // Set large buffer to handle high-speed bursts (32MB)
     pcap_set_snaplen(temp_handle, 65535); // Capture full packets
-    pcap_set_promisc(temp_handle, 0);    // "any" device doesn't support promisc
-    pcap_set_timeout(temp_handle, 1000); // 1 second timeout
+    pcap_set_promisc(temp_handle, 1);     // Enable promiscuous mode
+    pcap_set_timeout(temp_handle, 1000);  // 1 second timeout
     pcap_set_buffer_size(temp_handle, 32 * 1024 * 1024); // 32MB buffer
 
     // Activate the capture
@@ -505,10 +547,6 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    if (dev_name == "any")
-      std::print("Live capture on all interfaces (device: {})\n", dev_name);
-    else
-      std::print("Live capture on interface: {}\n", dev_name);
     std::print("Press Ctrl+C to stop\n\n");
   } else {
     // Replay mode - read from file

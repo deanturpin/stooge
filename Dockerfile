@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     tcpdump \
     netcat-openbsd \
     dnsutils \
+    figlet \
     && rm -rf /var/lib/apt/lists/*
 
 # Install FTXUI for terminal UI
@@ -42,5 +43,5 @@ COPY . .
 # Build using CMake (parallel build with all available cores)
 RUN cmake -B build && cmake --build build --parallel
 
-# Entry point - run stooge binary with PCAP file argument
-ENTRYPOINT ["./build/stooge"]
+# Entry point - show splash screen then run stooge
+CMD ["sh", "-c", "clear && figlet stooge && cat /etc/os-release && echo && ./build/stooge"]
