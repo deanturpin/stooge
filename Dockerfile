@@ -43,5 +43,5 @@ COPY . .
 # Build using CMake (parallel build with all available cores)
 RUN cmake -B build && cmake --build build --parallel
 
-# Entry point - show splash screen then run stooge
-CMD ["sh", "-c", "clear && figlet stooge && cat /etc/os-release && echo && ./build/stooge"]
+# Entry point - run stooge with splash screen wrapper
+ENTRYPOINT ["sh", "-c", "clear && figlet stooge && cat /etc/os-release && echo && sleep 2 && exec ./build/stooge \"$@\"", "--"]

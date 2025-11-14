@@ -466,6 +466,7 @@ int main(int argc, char *argv[]) {
   auto handle =
       std::unique_ptr<pcap_t, decltype(pcap_deleter)>{nullptr, pcap_deleter};
   auto live_mode = false;
+  auto interface_name = std::string{}; // For live mode interface tracking
   // Auto-detect TTY: enable TUI only if stdin is a terminal
   auto use_tui = isatty(STDIN_FILENO) != 0;
 
@@ -502,16 +503,26 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    auto dev_name = interfaces[0]; // Use first discovered interface
+    // Prefer interface starting with 'e' (eth/en) over wifi
+    for (const auto &iface : interfaces)
+      if (iface.starts_with("e")) {
+        interface_name = iface;
+        break;
+      }
+
+    // Fallback to first interface if no 'e' interface found
+    if (interface_name.empty())
+      interface_name = interfaces[0];
+
     std::print("Discovered interfaces: ");
     for (const auto &iface : interfaces)
       std::print("{} ", iface);
-    std::print("\nUsing interface: {}\n", dev_name);
+    std::print("\nUsing interface: {}\n", interface_name);
 
     // Create capture handle (allows setting buffer size before activation)
-    auto *temp_handle = pcap_create(dev_name.c_str(), errbuf.data());
+    auto *temp_handle = pcap_create(interface_name.c_str(), errbuf.data());
     if (!temp_handle) {
-      std::print("Error creating capture handle for {}: {}\n", dev_name,
+      std::print("Error creating capture handle for {}: {}\n", interface_name,
                  errbuf.data());
       return 1;
     }
@@ -532,7 +543,8 @@ int main(int argc, char *argv[]) {
     handle.reset(temp_handle);
 
     if (!handle) {
-      std::print("Error opening interface {}: {}\n", dev_name, errbuf.data());
+      std::print("Error opening interface {}: {}\n", interface_name,
+                 errbuf.data());
       std::print("\nLive capture failed. Possible causes:\n");
       std::print("  1. Insufficient privileges (need root/sudo)\n");
       std::print("  2. Running in Docker without host network access\n");
@@ -556,6 +568,12 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
+    // Extract filename from path for display
+    auto last_slash = pcap_file.find_last_of("/\\");
+    interface_name = last_slash != std::string::npos
+                         ? pcap_file.substr(last_slash + 1)
+                         : pcap_file;
+
     std::print("Successfully opened PCAP file: {}\n", pcap_file);
     std::print("Replay speed: {}x\n", SPEEDUP_FACTOR);
     if (!use_tui)
@@ -576,7 +594,9 @@ int main(int argc, char *argv[]) {
 
   // Initialise TUI data store (but don't start renderer yet)
   auto tui_store = std::make_shared<tui::data_store>();
-  tui_store->set_capture_mode(live_mode); // Set mode before packet processing
+  tui_store->set_capture_mode(
+      live_mode,
+      interface_name); // Set mode before packet processing
   std::shared_ptr<tui::renderer> tui_renderer;
 
   // Start DNS resolver thread to work on endpoint map (with 2s timeout)

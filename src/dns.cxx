@@ -105,6 +105,9 @@ void dns_resolver_thread() {
       // Resolve DNS with 2 second timeout
       auto hostname = resolve_with_timeout(ip);
 
+      // Increment DNS query counter (track network noise)
+      store_ptr->increment_dns_queries();
+
       // Update all endpoints with this IP (use IP itself for failed lookups)
       if (!hostname.empty())
         store_ptr->update_hostname(ip, hostname);

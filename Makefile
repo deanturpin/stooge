@@ -23,15 +23,15 @@ build-clean:
 
 # Run container with sample PCAP file (interactive TUI mode)
 run:
-	docker run --rm -it -v $(PWD):/data $(IMAGE) /data/laptop.pcapng
+	docker run --rm -it -v $(PWD):/data $(IMAGE) /data/capture.pcapng
 
 # Run container in text mode (no TTY required)
 text:
-	docker run --rm -v $(PWD):/data --entrypoint /app/build/stooge $(IMAGE) --no-tui /data/laptop.pcapng
+	docker run --rm -v $(PWD):/data --entrypoint /app/build/stooge $(IMAGE) --no-tui /data/capture.pcapng
 
 # Quick replay test in text mode (3 second timeout for rapid iteration)
 quick: build
-	timeout 100 docker run --rm -v $(PWD):/data --entrypoint /app/build/stooge $(IMAGE) --no-tui /data/laptop.pcapng || true
+	timeout 100 docker run --rm -v $(PWD):/data --entrypoint /app/build/stooge $(IMAGE) --no-tui /data/capture.pcapng || true
 
 # Run unit tests
 test: build
@@ -47,7 +47,7 @@ gdb: build
 	@echo "Starting GDB debugging session..."
 	docker run --rm -it --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
 		-v $(PWD):/data --entrypoint /bin/bash $(IMAGE) \
-		-c "gdb -ex run --args /app/build/stooge /data/laptop.pcapng"
+		-c "gdb -ex run --args /app/build/stooge /data/capture.pcapng"
 
 # Remove Docker image
 clean:

@@ -26,9 +26,8 @@ bool contains_case_insensitive(std::string_view haystack,
 } // anonymous namespace
 
 std::string endpoint_stats::to_string() const {
-  // Format: IP:port Protocol MAC/Vendor Hostname Pkts
-  auto ip_port =
-      std::string{port_ > 0 ? std::format("{}:{}", ip_, port_) : ip_};
+  // Format: IP Protocol MAC/Vendor Hostname Pkts
+  // Port is omitted since we aggregate by MAC:IP:protocol
 
   // Replace first part of MAC with vendor if available
   auto mac_or_vendor = std::string{};
@@ -57,7 +56,7 @@ std::string endpoint_stats::to_string() const {
   auto host_str =
       std::string{hostname_.empty() || hostname_ == ip_ ? "-" : hostname_};
 
-  return std::format("{:21} {:8} {:17} {:30} {:5}", ip_port.substr(0, 21),
+  return std::format("{:15} {:8} {:17} {:30} {:<5}", ip_.substr(0, 15),
                      protocol_.substr(0, 8), mac_or_vendor.substr(0, 17),
                      host_str.substr(0, 30), packet_count_);
 }
@@ -70,11 +69,13 @@ void data_store::add_endpoint(std::string_view ip, uint16_t port,
                               std::string_view mac_address) {
   auto lock = std::scoped_lock{mutex_};
 
-  // Key includes MAC to distinguish source/dest endpoints with same IP:port
-  auto key = std::format("{}:{}:{}:{}", mac_address, ip, port, protocol);
+  // Key excludes port to aggregate all ports for same MAC:IP:protocol
+  // This groups HTTP, HTTPS, etc. on same device as one endpoint
+  auto key = std::format("{}:{}:{}", mac_address, ip, protocol);
 
   auto &ep = endpoints_[key];
   ep.ip_ = ip;
+  // Keep most recent port seen (could track all ports in future)
   ep.port_ = port;
   ep.protocol_ = protocol;
 
@@ -232,9 +233,22 @@ double data_store::get_bits_per_second() const {
   return static_cast<double>(total_bytes) * 8.0 / seconds;
 }
 
-void data_store::set_capture_mode(bool is_live) {
+void data_store::increment_dns_queries() {
+  // Atomic increment - no lock needed
+  dns_query_count_.fetch_add(1);
+}
+
+size_t data_store::get_dns_query_count() const {
+  // Atomic read - no lock needed
+  return dns_query_count_.load();
+}
+
+void data_store::set_capture_mode(bool is_live,
+                                  std::string_view interface_name) {
   // Set capture mode once during initialization
   is_live_capture_.store(is_live);
+  auto lock = std::scoped_lock{mutex_};
+  interface_name_ = interface_name;
 }
 
 void data_store::set_capture_time(double current_seconds) {
@@ -273,6 +287,11 @@ std::string data_store::get_time_display() const {
 bool data_store::is_live() const {
   // Atomic read - no lock needed
   return is_live_capture_.load();
+}
+
+std::string data_store::get_interface_name() const {
+  auto lock = std::scoped_lock{mutex_};
+  return interface_name_;
 }
 
 std::vector<std::string> data_store::get_unresolved_ips() const {
@@ -441,9 +460,9 @@ void renderer::render_loop() {
     auto endpoint_elements = std::vector<Element>{};
     endpoint_elements.reserve(endpoints.size() + 1);
 
-    // Endpoint header (no Vendor column - merged with MAC)
+    // Endpoint header (port removed, aggregated by MAC:IP:protocol)
     endpoint_elements.push_back(
-        text(std::format("{:21} {:8} {:17} {:30} {:5}", "Addr:Port", "Protocol",
+        text(std::format("{:15} {:8} {:17} {:30} {:<5}", "Address", "Protocol",
                          "MAC/Vendor", "Hostname", "Pkts")) |
         bold | color(Color::White));
 
@@ -543,7 +562,14 @@ void renderer::render_loop() {
     auto spinner = std::string{SPINNER_FRAMES[frame]};
     spinner_frame_.store((frame + 1) % SPINNER_FRAMES.size());
 
-    auto mode_str = is_live ? "LIVE" : "REPLAY";
+    // Get interface name (live mode) or filename (replay mode)
+    auto mode_str = std::string{};
+    auto name = store_->get_interface_name();
+    if (is_live) {
+      mode_str = name.empty() ? "LIVE" : std::format("LIVE ({})", name);
+    } else {
+      mode_str = name.empty() ? "REPLAY" : std::format("REPLAY ({})", name);
+    }
 
     // Format b/s with appropriate units (Kb/s, Mb/s, Gb/s)
     auto bps_str = std::string{};
@@ -556,9 +582,15 @@ void renderer::render_loop() {
     else
       bps_str = std::format("{:.0f} b/s", bps);
 
+    // Get DNS query count
+    auto dns_queries = store_->get_dns_query_count();
+
+    // Use fixed-width formatting to reduce jumpiness
     auto title =
-        text(std::format("{} {} | {} | Packets: {} | {:.1f} p/s | {}", spinner,
-                         mode_str, time_display, total_packets, pps, bps_str)) |
+        text(std::format("{} {:20} | {} | Pkts: {:6} | {:6.1f} p/s | {:>11} | "
+                         "DNS: {:3}",
+                         spinner, mode_str, time_display, total_packets, pps,
+                         bps_str, dns_queries)) |
         bold | color(Color::Cyan);
 
     // Two-column layout: endpoints left, packets right

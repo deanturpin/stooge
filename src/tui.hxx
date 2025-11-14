@@ -70,8 +70,14 @@ public:
   // Get bits per second rate
   double get_bits_per_second() const;
 
+  // Increment DNS query counter
+  void increment_dns_queries();
+
+  // Get total DNS queries made
+  size_t get_dns_query_count() const;
+
   // Set capture mode (live vs replay) - call once during initialization
-  void set_capture_mode(bool is_live);
+  void set_capture_mode(bool is_live, std::string_view interface_name = "");
 
   // Set current packet time
   void set_capture_time(double current_seconds);
@@ -84,6 +90,9 @@ public:
 
   // Check if we're in live capture mode
   bool is_live() const;
+
+  // Get interface name (for live mode)
+  std::string get_interface_name() const;
 
   // Get list of IPs that need DNS resolution (empty hostname field)
   std::vector<std::string> get_unresolved_ips() const;
@@ -110,6 +119,7 @@ private:
   std::deque<packet_entry> packets_;
   std::atomic<size_t> total_packets_{0uz};    // Lock-free counter
   std::atomic<size_t> total_bytes_{0uz};      // Lock-free byte counter
+  std::atomic<size_t> dns_query_count_{0uz};  // DNS queries made
   static constexpr auto MAX_PACKETS = 1000uz; // Ringbuffer size
 
   // Rolling bandwidth calculation (last 5 seconds)
@@ -132,6 +142,9 @@ private:
       0}; // Actual wall-clock time from PCAP
   std::chrono::steady_clock::time_point start_time_{
       std::chrono::steady_clock::now()}; // When capture started
+
+  // Capture interface name (for live mode)
+  std::string interface_name_;
 
   // Status message (e.g., DNS resolution progress)
   std::string status_message_;
