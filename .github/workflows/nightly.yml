@@ -1,0 +1,39 @@
+name: Nightly Build
+
+on:
+  schedule:
+    # Run at 02:00 UTC every day
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image with latest Ubuntu packages
+        run: |
+          docker build --no-cache -t deanturpin/stooge:nightly .
+
+      - name: Test binary exists
+        run: |
+          docker run --rm deanturpin/stooge:nightly ./build/stooge --help
+
+      - name: Create nightly release info
+        run: |
+          echo "Nightly build from $(date -u +%Y-%m-%d)" > nightly-info.txt
+          echo "Ubuntu packages refreshed" >> nightly-info.txt
+          docker run --rm deanturpin/stooge:nightly cat /etc/os-release >> nightly-info.txt
+
+      - name: Upload build info
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-build-info
+          path: nightly-info.txt
+          retention-days: 7
