@@ -635,8 +635,8 @@ void renderer::render_loop() {
     // Process the event we just posted (draws frame)
     loop.RunOnce();
 
-    // Limit to ~10 FPS
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Limit to ~2 FPS to reduce CPU usage
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
   }
 
   // Mark screen as inactive and clear reference to prevent refresh thread
