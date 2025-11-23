@@ -23,7 +23,7 @@ jobs:
 
       - name: Test binary exists
         run: |
-          docker run --rm deanturpin/stooge:nightly ./build/stooge --help
+          docker run --rm -e TERM=xterm deanturpin/stooge:nightly ./build/stooge --help
 
       - name: Create nightly release info
         run: |
