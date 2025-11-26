@@ -29,7 +29,7 @@ jobs:
         run: |
           echo "Nightly build from $(date -u +%Y-%m-%d)" > nightly-info.txt
           echo "Ubuntu packages refreshed" >> nightly-info.txt
-          docker run --rm --entrypoint cat deanturpin/stooge:nightly /etc/os-release >> nightly-info.txt
+          docker run --rm -e TERM=xterm --entrypoint cat deanturpin/stooge:nightly /etc/os-release >> nightly-info.txt
 
       - name: Upload build info
         uses: actions/upload-artifact@v4
