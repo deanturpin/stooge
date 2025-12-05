@@ -118,12 +118,22 @@ std::string lookup_vendor(const std::array<uint8_t, 6> &mac) {
   if (!loaded)
     load_database();
 
-  // Build OUI key from first 3 bytes
-  auto oui_key = std::format("{:02X}{:02X}{:02X}", mac[0], mac[1], mac[2]);
+  // Build full MAC address key (all 6 bytes) for progressive matching
+  // This handles variable-length OUI prefixes (MA-L: 24-bit, MA-M: 28-bit,
+  // MA-S: 36-bit)
+  auto mac_key = std::format("{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}", mac[0],
+                             mac[1], mac[2], mac[3], mac[4], mac[5]);
 
-  auto lock = std::lock_guard{oui_mutex};
-  if (auto it = oui_db.find(oui_key); it != oui_db.end())
-    return it->second;
+  // Try progressively shorter prefixes (from 12 chars down to 6)
+  // Start with longest match first (better specificity)
+  while (mac_key.length() > 5) {
+    auto lock = std::lock_guard{oui_mutex};
+    if (auto it = oui_db.find(mac_key); it != oui_db.end())
+      return it->second;
+
+    // Try shorter prefix (unlock happens automatically)
+    mac_key.pop_back();
+  }
 
   return {};
 }
