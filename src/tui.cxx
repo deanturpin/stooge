@@ -26,17 +26,16 @@ bool contains_case_insensitive(std::string_view haystack,
 } // anonymous namespace
 
 std::string endpoint_stats::to_string() const {
-  // Format: IP Protocol MAC Vendor Hostname Pkts
-  // Separate MAC and vendor into dedicated columns
+  // Format: IP MAC Vendor Hostname Pkts
+  // Protocol discriminator removed - single entry per endpoint
 
   auto mac_str = mac_address_.empty() ? "-" : mac_address_;
   auto vendor_str = vendor_.empty() || vendor_ == "-" ? "-" : vendor_;
   auto host_str = hostname_.empty() || hostname_ == ip_ ? "-" : hostname_;
 
-  return std::format("{:15} {:8} {:17} {:20} {:30} {:<5}", ip_.substr(0, 15),
-                     protocol_.substr(0, 8), mac_str.substr(0, 17),
-                     vendor_str.substr(0, 20), host_str.substr(0, 30),
-                     packet_count_);
+  return std::format("{:15} {:17} {:20} {:30} {:<5}", ip_.substr(0, 15),
+                     mac_str.substr(0, 17), vendor_str.substr(0, 20),
+                     host_str.substr(0, 30), packet_count_);
 }
 
 // data_store implementation
@@ -47,9 +46,9 @@ void data_store::add_endpoint(std::string_view ip, uint16_t port,
                               std::string_view mac_address) {
   auto lock = std::scoped_lock{mutex_};
 
-  // Key excludes port to aggregate all ports for same MAC:IP:protocol
-  // This groups HTTP, HTTPS, etc. on same device as one endpoint
-  auto key = std::format("{}:{}:{}", mac_address, ip, protocol);
+  // Key excludes port and protocol to aggregate all traffic for same MAC:IP
+  // This shows one entry per network participant regardless of protocol
+  auto key = std::format("{}:{}", mac_address, ip);
 
   auto &ep = endpoints_[key];
   ep.ip_ = ip;
@@ -438,13 +437,13 @@ void renderer::render_loop() {
     auto endpoint_elements = std::vector<Element>{};
     endpoint_elements.reserve(endpoints.size() + 1);
 
-    // Endpoint header (port removed, aggregated by MAC:IP:protocol)
+    // Endpoint header (port and protocol removed, aggregated by MAC:IP)
     endpoint_elements.push_back(
-        text(std::format("{:15} {:8} {:17} {:20} {:30} {:<5}", "Address",
-                         "Protocol", "MAC", "Vendor", "Hostname", "Pkts")) |
+        text(std::format("{:15} {:17} {:20} {:30} {:<5}", "Address", "MAC",
+                         "Vendor", "Hostname", "Pkts")) |
         bold | color(Color::White));
 
-    // Endpoint rows with protocol and vendor colourisation
+    // Endpoint rows with vendor and IP version colourisation
     for (const auto &ep : endpoints) {
       auto ep_text = text(ep.to_string());
 
@@ -456,21 +455,11 @@ void renderer::render_loop() {
         // Known vendors in bright cyan to stand out
         ep_text = ep_text | color(Color::Cyan);
       } else if (is_ipv6) {
-        // IPv6 addresses in magenta/blue tones
-        if (ep.protocol_ == "TCP")
-          ep_text = ep_text | color(Color::GreenLight);
-        else if (ep.protocol_ == "UDP")
-          ep_text = ep_text | color(Color::YellowLight);
-        else
-          ep_text = ep_text | color(Color::CyanLight);
+        // IPv6 addresses in lighter colour
+        ep_text = ep_text | color(Color::CyanLight);
       } else {
-        // IPv4 addresses in standard colours
-        if (ep.protocol_ == "TCP")
-          ep_text = ep_text | color(Color::Green);
-        else if (ep.protocol_ == "UDP")
-          ep_text = ep_text | color(Color::Yellow);
-        else
-          ep_text = ep_text | color(Color::White);
+        // IPv4 addresses in standard colour
+        ep_text = ep_text | color(Color::Green);
       }
 
       endpoint_elements.push_back(ep_text);
