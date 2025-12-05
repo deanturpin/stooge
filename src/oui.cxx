@@ -53,23 +53,13 @@ static_assert(is_valid_mac_array_size(6), "MAC address must be 6 bytes");
 static_assert(!is_valid_mac_array_size(5), "5 bytes is not a valid MAC");
 static_assert(!is_valid_mac_array_size(7), "7 bytes is not a valid MAC");
 
-// Cached OUI database
-std::map<std::string, std::string> oui_db;
-std::mutex oui_mutex;
-bool loaded = false;
-
-// Load OUI database from file
-void load_database() {
-  auto lock = std::lock_guard{oui_mutex};
-  if (loaded)
-    return;
-
+// Load OUI database from file at program startup
+std::map<std::string, std::string> load_database() {
+  auto oui_db = std::map<std::string, std::string>{};
   auto file = std::ifstream{"/usr/share/ieee-data/oui.txt"};
-  if (!file.is_open()) {
-    // Database file not found (don't print - TUI might be active)
-    loaded = true;
-    return;
-  }
+
+  if (!file.is_open())
+    return oui_db; // Return empty map if file not found
 
   auto line = std::string{};
   while (std::getline(file, line)) {
@@ -109,15 +99,15 @@ void load_database() {
     }
   }
 
-  // Database loaded successfully (don't print - TUI might be active)
-  loaded = true;
+  return oui_db;
 }
+
+// Initialize database at program startup (const - loaded once)
+const auto oui_db = load_database();
+std::mutex oui_mutex; // Protect concurrent map access during lookups
 } // anonymous namespace
 
 std::string lookup_vendor(const std::array<uint8_t, 6> &mac) {
-  if (!loaded)
-    load_database();
-
   // Build full MAC address key (all 6 bytes) for progressive matching
   // This handles variable-length OUI prefixes (MA-L: 24-bit, MA-M: 28-bit,
   // MA-S: 36-bit)
