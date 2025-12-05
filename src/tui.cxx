@@ -26,39 +26,17 @@ bool contains_case_insensitive(std::string_view haystack,
 } // anonymous namespace
 
 std::string endpoint_stats::to_string() const {
-  // Format: IP Protocol MAC/Vendor Hostname Pkts
-  // Port is omitted since we aggregate by MAC:IP:protocol
+  // Format: IP Protocol MAC Vendor Hostname Pkts
+  // Separate MAC and vendor into dedicated columns
 
-  // Replace first part of MAC with vendor if available
-  auto mac_or_vendor = std::string{};
-  if (!vendor_.empty() && vendor_ != "-") {
-    // Extract alphanumeric chars from vendor (up to 8 chars)
-    auto vendor_clean = std::string{};
-    for (auto ch : vendor_) {
-      if (std::isalnum(static_cast<unsigned char>(ch))) {
-        vendor_clean += ch;
-        if (vendor_clean.length() >= 8)
-          break;
-      }
-    }
+  auto mac_str = mac_address_.empty() ? "-" : mac_address_;
+  auto vendor_str = vendor_.empty() || vendor_ == "-" ? "-" : vendor_;
+  auto host_str = hostname_.empty() || hostname_ == ip_ ? "-" : hostname_;
 
-    if (mac_address_.length() >= 17) {
-      // Extract last 3 octets (last 8 chars: :XX:XX:XX)
-      auto mac_suffix = mac_address_.substr(9); // Skip first "XX:XX:XX:"
-      mac_or_vendor = std::format("{:8}:{}", vendor_clean, mac_suffix);
-    } else {
-      mac_or_vendor = vendor_clean;
-    }
-  } else {
-    mac_or_vendor = mac_address_.empty() ? "-" : mac_address_;
-  }
-
-  auto host_str =
-      std::string{hostname_.empty() || hostname_ == ip_ ? "-" : hostname_};
-
-  return std::format("{:15} {:8} {:17} {:30} {:<5}", ip_.substr(0, 15),
-                     protocol_.substr(0, 8), mac_or_vendor.substr(0, 17),
-                     host_str.substr(0, 30), packet_count_);
+  return std::format("{:15} {:8} {:17} {:20} {:30} {:<5}", ip_.substr(0, 15),
+                     protocol_.substr(0, 8), mac_str.substr(0, 17),
+                     vendor_str.substr(0, 20), host_str.substr(0, 30),
+                     packet_count_);
 }
 
 // data_store implementation
@@ -462,8 +440,8 @@ void renderer::render_loop() {
 
     // Endpoint header (port removed, aggregated by MAC:IP:protocol)
     endpoint_elements.push_back(
-        text(std::format("{:15} {:8} {:17} {:30} {:<5}", "Address", "Protocol",
-                         "MAC/Vendor", "Hostname", "Pkts")) |
+        text(std::format("{:15} {:8} {:17} {:20} {:30} {:<5}", "Address",
+                         "Protocol", "MAC", "Vendor", "Hostname", "Pkts")) |
         bold | color(Color::White));
 
     // Endpoint rows with protocol and vendor colourisation
