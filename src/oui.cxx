@@ -56,47 +56,48 @@ static_assert(!is_valid_mac_array_size(7), "7 bytes is not a valid MAC");
 // Load OUI database from file at program startup
 std::map<std::string, std::string> load_database() {
   auto oui_db = std::map<std::string, std::string>{};
-  auto file = std::ifstream{"/usr/share/ieee-data/oui.txt"};
+  auto file = std::ifstream{"/usr/share/arp-scan/ieee-oui.txt"};
 
   if (!file.is_open())
     return oui_db; // Return empty map if file not found
 
   auto line = std::string{};
   while (std::getline(file, line)) {
-    // OUI format: "00-11-22   (hex)		Vendor Name"
-    if (line.length() < 22 || line.find("(hex)") == std::string::npos)
+    // arp-scan format: "00:11:22<TAB>Vendor Name" or "001122<TAB>Vendor Name"
+    // Skip comments and empty lines
+    if (line.empty() || line[0] == '#')
       continue;
 
-    // Extract OUI (first 8 chars, e.g., "00-11-22")
-    auto oui = line.substr(0, 8);
-
-    // Extract vendor name (after "(hex)" and tabs)
-    auto hex_pos = line.find("(hex)");
-    if (hex_pos == std::string::npos)
+    // Find the tab separator
+    auto tab_pos = line.find('\t');
+    if (tab_pos == std::string::npos)
       continue;
 
-    auto vendor_start = hex_pos + 5;
-    while (vendor_start < line.length() &&
-           (line[vendor_start] == ' ' || line[vendor_start] == '\t'))
-      vendor_start++;
+    // Extract OUI prefix (before tab)
+    auto oui = line.substr(0, tab_pos);
+    if (oui.empty())
+      continue;
 
-    if (vendor_start < line.length()) {
-      auto vendor = line.substr(vendor_start);
+    // Extract vendor name (after tab)
+    auto vendor = line.substr(tab_pos + 1);
 
-      // Strip trailing whitespace (including \r from Windows line endings)
-      while (!vendor.empty() &&
-             (vendor.back() == ' ' || vendor.back() == '\t' ||
-              vendor.back() == '\r' || vendor.back() == '\n'))
-        vendor.pop_back();
+    // Strip trailing whitespace (including \r from Windows line endings)
+    while (!vendor.empty() && (vendor.back() == ' ' || vendor.back() == '\t' ||
+                               vendor.back() == '\r' || vendor.back() == '\n'))
+      vendor.pop_back();
 
-      // Convert OUI to uppercase and remove dashes
-      auto oui_key = std::string{};
-      for (auto c : oui) {
-        if (c != '-')
-          oui_key += std::toupper(c);
-      }
-      oui_db[oui_key] = vendor;
+    if (vendor.empty())
+      continue;
+
+    // Convert OUI to uppercase and remove colons/dashes
+    auto oui_key = std::string{};
+    for (auto c : oui) {
+      if (c != ':' && c != '-')
+        oui_key += std::toupper(c);
     }
+
+    if (!oui_key.empty())
+      oui_db[oui_key] = vendor;
   }
 
   return oui_db;
