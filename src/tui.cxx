@@ -416,7 +416,7 @@ void renderer::render_loop() {
   auto last_packet_count = std::atomic<size_t>{0uz};
   auto force_refresh = std::atomic<bool>{true};
 
-  // View mode: 0=endpoints, 1=packets (toggle between two views)
+  // View mode: 0=endpoints, 1=packets, 2=hostnames (cycle through three views)
   auto view_mode = std::atomic<int>{0};
 
   auto component = Renderer([this, &last_packet_count, &force_refresh,
@@ -564,16 +564,54 @@ void renderer::render_loop() {
                          bps_str, dns_queries)) |
         bold | color(Color::Cyan);
 
+    // Build hostname list (aggregated by hostname with packet counts)
+    auto hostname_elements = std::vector<Element>{};
+
+    // Aggregate endpoints by hostname
+    auto hostname_map = std::map<std::string, size_t>{};
+    for (const auto &ep : endpoints) {
+      auto hostname = ep.hostname_.empty() || ep.hostname_ == ep.ip_
+                          ? std::string{}
+                          : ep.hostname_;
+      if (!hostname.empty())
+        hostname_map[hostname] += ep.packet_count_;
+    }
+
+    // Convert to vector and sort by packet count (descending)
+    auto hostname_vec = std::vector<std::pair<std::string, size_t>>{
+        hostname_map.begin(), hostname_map.end()};
+    std::sort(hostname_vec.begin(), hostname_vec.end(),
+              [](const auto &a, const auto &b) { return a.second > b.second; });
+
+    // Add header
+    hostname_elements.push_back(
+        text(std::format("{:60} {:>10}", "Hostname", "Packets")) | bold |
+        color(Color::White));
+
+    // Add hostname rows
+    for (const auto &[hostname, count] : hostname_vec) {
+      auto row =
+          text(std::format("{:60} {:>10}", hostname.substr(0, 60), count));
+      hostname_elements.push_back(row | color(Color::Green));
+    }
+
+    auto hostname_pane =
+        vbox(hostname_elements) | vscroll_indicator | ftxui::frame | flex;
+
     // View mode help text
     auto view_help = text("Press SPACE to toggle view | q/ESC to quit") |
                      color(Color::GrayLight);
 
-    // Toggle between endpoints and packets views
+    // Cycle through three views
     auto current_view = view_mode.load();
     if (current_view == 1) {
       // Packets view (full screen)
       return vbox(
           {title, separator(), view_help, separator(), packet_pane | flex});
+    } else if (current_view == 2) {
+      // Hostnames view (full screen)
+      return vbox(
+          {title, separator(), view_help, separator(), hostname_pane | flex});
     } else {
       // Endpoints view (full screen, default)
       return vbox(
@@ -595,10 +633,10 @@ void renderer::render_loop() {
           return true;
         }
 
-        // Spacebar: toggle between endpoints and packets views
+        // Spacebar: cycle through endpoints, packets, and hostnames views
         if (event == Event::Character(' ')) {
           auto current = view_mode.load();
-          view_mode.store(current == 0 ? 1 : 0);
+          view_mode.store((current + 1) % 3);
           return true;
         }
 
