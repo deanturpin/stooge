@@ -416,7 +416,7 @@ void renderer::render_loop() {
   auto last_packet_count = std::atomic<size_t>{0uz};
   auto force_refresh = std::atomic<bool>{true};
 
-  // View mode: 0=split, 1=packets only, 2=endpoints only
+  // View mode: 0=endpoints, 1=packets (toggle between two views)
   auto view_mode = std::atomic<int>{0};
 
   auto component = Renderer([this, &last_packet_count, &force_refresh,
@@ -568,21 +568,16 @@ void renderer::render_loop() {
     auto view_help = text("Press SPACE to toggle view | q/ESC to quit") |
                      color(Color::GrayLight);
 
-    // Conditional layout based on view mode
+    // Toggle between endpoints and packets views
     auto current_view = view_mode.load();
     if (current_view == 1) {
-      // Packets only (full screen)
+      // Packets view (full screen)
       return vbox(
           {title, separator(), view_help, separator(), packet_pane | flex});
-    } else if (current_view == 2) {
-      // Endpoints only (full screen)
+    } else {
+      // Endpoints view (full screen, default)
       return vbox(
           {title, separator(), view_help, separator(), endpoint_pane | flex});
-    } else {
-      // Split view (default)
-      return vbox(
-          {title, separator(), view_help, separator(),
-           hbox({endpoint_pane | flex, separator(), packet_pane | flex})});
     }
   });
 
@@ -600,11 +595,10 @@ void renderer::render_loop() {
           return true;
         }
 
-        // Spacebar: cycle through view modes (split -> packets -> endpoints ->
-        // split)
+        // Spacebar: toggle between endpoints and packets views
         if (event == Event::Character(' ')) {
           auto current = view_mode.load();
-          view_mode.store((current + 1) % 3);
+          view_mode.store(current == 0 ? 1 : 0);
           return true;
         }
 
