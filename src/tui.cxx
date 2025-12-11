@@ -33,9 +33,10 @@ std::string endpoint_stats::to_string() const {
   auto vendor_str = vendor_.empty() || vendor_ == "-" ? "-" : vendor_;
   auto host_str = hostname_.empty() || hostname_ == ip_ ? "-" : hostname_;
 
-  return std::format("{:15} {:17} {:20} {:30} {:<5}", ip_.substr(0, 15),
-                     mac_str.substr(0, 17), vendor_str.substr(0, 20),
-                     host_str.substr(0, 30), packet_count_);
+  // No truncation on hostname - use full horizontal space
+  return std::format("{:15} {:17} {:20} {} {:<5}", ip_.substr(0, 15),
+                     mac_str.substr(0, 17), vendor_str.substr(0, 20), host_str,
+                     packet_count_);
 }
 
 // data_store implementation
@@ -443,7 +444,7 @@ void renderer::render_loop() {
 
     // Endpoint header (port and protocol removed, aggregated by MAC:IP)
     endpoint_elements.push_back(
-        text(std::format("{:15} {:17} {:20} {:30} {:<5}", "Address", "MAC",
+        text(std::format("{:15} {:17} {:20} {} {:<5}", "Address", "MAC",
                          "Vendor", "Hostname", "Pkts")) |
         bold | color(Color::White));
 
@@ -557,9 +558,10 @@ void renderer::render_loop() {
     auto dns_queries = store_->get_dns_query_count();
 
     // Use fixed-width formatting to reduce jumpiness
+    // Consolidated header: title and help text on one line
     auto title =
         text(std::format("{} {:20} | {} | Pkts: {:6} | {:6.1f} p/s | {:>11} | "
-                         "DNS: {:3}",
+                         "DNS: {:3} | SPACE=view q/ESC=quit",
                          spinner, mode_str, time_display, total_packets, pps,
                          bps_str, dns_queries)) |
         bold | color(Color::Cyan);
@@ -598,24 +600,17 @@ void renderer::render_loop() {
     auto hostname_pane =
         vbox(hostname_elements) | vscroll_indicator | ftxui::frame | flex;
 
-    // View mode help text
-    auto view_help = text("Press SPACE to toggle view | q/ESC to quit") |
-                     color(Color::GrayLight);
-
     // Cycle through three views
     auto current_view = view_mode.load();
     if (current_view == 1) {
       // Packets view (full screen)
-      return vbox(
-          {title, separator(), view_help, separator(), packet_pane | flex});
+      return vbox({title, separator(), packet_pane | flex});
     } else if (current_view == 2) {
       // Hostnames view (full screen)
-      return vbox(
-          {title, separator(), view_help, separator(), hostname_pane | flex});
+      return vbox({title, separator(), hostname_pane | flex});
     } else {
       // Endpoints view (full screen, default)
-      return vbox(
-          {title, separator(), view_help, separator(), endpoint_pane | flex});
+      return vbox({title, separator(), endpoint_pane | flex});
     }
   });
 
