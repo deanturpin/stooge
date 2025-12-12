@@ -1,5 +1,6 @@
 // Terminal UI implementation
 #include "tui.hxx"
+#include "network_utils.hxx"
 #include <algorithm>
 #include <cctype>
 #include <ctime>
@@ -27,14 +28,19 @@ bool contains_case_insensitive(std::string_view haystack,
 
 std::string endpoint_stats::to_string() const {
   // Format: IP MAC Vendor Packets Hostname
-  // Protocol discriminator removed - single entry per endpoint
+  // Consolidated by MAC - single entry per physical device
 
   auto mac_str = mac_address_.empty() ? "-" : mac_address_;
   auto vendor_str = vendor_.empty() || vendor_ == "-" ? "-" : vendor_;
   auto host_str = hostname_.empty() || hostname_ == ip_ ? "-" : hostname_;
 
+  // Show IP with count if multiple IPs seen for this MAC
+  auto ip_str = ip_.empty() ? "-" : ip_;
+  if (all_ips_.size() > 1)
+    ip_str = std::format("{} (+{})", ip_.substr(0, 12), all_ips_.size() - 1);
+
   // Packets column before hostname to keep alignment consistent
-  return std::format("{:15} {:17} {:20} {:<7} {}", ip_.substr(0, 15),
+  return std::format("{:15} {:17} {:20} {:<7} {}", ip_str,
                      mac_str.substr(0, 17), vendor_str.substr(0, 20),
                      packet_count_, host_str);
 }
@@ -47,12 +53,18 @@ void data_store::add_endpoint(std::string_view ip, uint16_t port,
                               std::string_view mac_address) {
   auto lock = std::scoped_lock{mutex_};
 
-  // Key excludes port and protocol to aggregate all traffic for same MAC:IP
-  // This shows one entry per network participant regardless of protocol
-  auto key = std::format("{}:{}", mac_address, ip);
+  // Key by MAC only - consolidate all IPs for the same physical device
+  // This shows one entry per device regardless of IP address changes
+  auto key = std::string{mac_address};
 
   auto &ep = endpoints_[key];
-  ep.ip_ = ip;
+
+  // Track all IPs seen for this MAC
+  if (!ip.empty()) {
+    ep.all_ips_.insert(std::string{ip});
+    ep.ip_ = ip; // Most recently seen IP becomes primary
+  }
+
   // Keep most recent port seen (could track all ports in future)
   ep.port_ = port;
   ep.protocol_ = protocol;
@@ -590,27 +602,43 @@ void renderer::render_loop() {
         text(std::format("{:60} {:>10}", "Hostname", "Packets")) | bold |
         color(Color::White));
 
-    // Add hostname rows
+    // Add hostname rows with colour coding
     for (const auto &[hostname, count] : hostname_vec) {
       auto row =
           text(std::format("{:60} {:>10}", hostname.substr(0, 60), count));
-      hostname_elements.push_back(row | color(Color::Green));
+
+      // Colour code by hostname type
+      if (network_utils::is_local_hostname(hostname)) {
+        // Local hostnames (*.local, *.lan, single-label) in cyan
+        row = row | color(Color::Cyan);
+      } else {
+        // Remote/public hostnames in green
+        row = row | color(Color::Green);
+      }
+
+      hostname_elements.push_back(row);
     }
 
     auto hostname_pane =
         vbox(hostname_elements) | vscroll_indicator | ftxui::frame | flex;
 
-    // Cycle through three views
+    // Cycle through three views with titles
     auto current_view = view_mode.load();
     if (current_view == 1) {
       // Packets view (full screen)
-      return vbox({title, separator(), packet_pane | flex});
+      auto view_title = text("Packets") | bold | color(Color::Yellow);
+      return vbox(
+          {title, separator(), view_title, separator(), packet_pane | flex});
     } else if (current_view == 2) {
       // Hostnames view (full screen)
-      return vbox({title, separator(), hostname_pane | flex});
+      auto view_title = text("Hostnames") | bold | color(Color::Yellow);
+      return vbox(
+          {title, separator(), view_title, separator(), hostname_pane | flex});
     } else {
       // Endpoints view (full screen, default)
-      return vbox({title, separator(), endpoint_pane | flex});
+      auto view_title = text("Endpoints") | bold | color(Color::Yellow);
+      return vbox(
+          {title, separator(), view_title, separator(), endpoint_pane | flex});
     }
   });
 

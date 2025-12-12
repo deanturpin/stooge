@@ -20,7 +20,8 @@ namespace tui {
 
 // Endpoint information with packet statistics
 struct endpoint_stats {
-  std::string ip_;
+  std::string ip_;                // Primary IP (most recent or first seen)
+  std::set<std::string> all_ips_; // All IP addresses seen for this MAC
   uint16_t port_;
   std::string protocol_;
   std::string hostname_;    // Cached DNS lookup
