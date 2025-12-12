@@ -1,19 +1,20 @@
 // Network utility functions for IP address and hostname classification
 #pragma once
 
-#include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstdint>
 #include <string_view>
 
 namespace network_utils {
 
 namespace detail {
+// Constexpr ASCII digit check
+constexpr bool is_digit(char c) { return c >= '0' && c <= '9'; }
+
 // Parse an IPv4 octet from string (constexpr helper)
 constexpr int parse_octet(std::string_view str, size_t &pos) {
   auto result = 0;
-  while (pos < str.length() && std::isdigit(str[pos])) {
+  while (pos < str.length() && is_digit(str[pos])) {
     result = result * 10 + (str[pos] - '0');
     pos++;
   }
@@ -36,12 +37,17 @@ constexpr bool ends_with(std::string_view str, std::string_view suffix) {
   return str.substr(str.length() - suffix.length()) == suffix;
 }
 
-// Case-insensitive string comparison (constexpr helper)
+// Constexpr ASCII lowercase conversion
+constexpr char to_lower_ascii(char c) {
+  return (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c;
+}
+
+// Case-insensitive string comparison (constexpr helper, ASCII only)
 constexpr bool iequals(std::string_view a, std::string_view b) {
   if (a.length() != b.length())
     return false;
   for (auto i = 0uz; i < a.length(); i++)
-    if (std::tolower(a[i]) != std::tolower(b[i]))
+    if (to_lower_ascii(a[i]) != to_lower_ascii(b[i]))
       return false;
   return true;
 }
