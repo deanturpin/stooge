@@ -26,17 +26,17 @@ bool contains_case_insensitive(std::string_view haystack,
 } // anonymous namespace
 
 std::string endpoint_stats::to_string() const {
-  // Format: IP MAC Vendor Hostname Pkts
+  // Format: IP MAC Vendor Packets Hostname
   // Protocol discriminator removed - single entry per endpoint
 
   auto mac_str = mac_address_.empty() ? "-" : mac_address_;
   auto vendor_str = vendor_.empty() || vendor_ == "-" ? "-" : vendor_;
   auto host_str = hostname_.empty() || hostname_ == ip_ ? "-" : hostname_;
 
-  // No truncation on hostname - use full horizontal space
-  return std::format("{:15} {:17} {:20} {} {:<5}", ip_.substr(0, 15),
-                     mac_str.substr(0, 17), vendor_str.substr(0, 20), host_str,
-                     packet_count_);
+  // Packets column before hostname to keep alignment consistent
+  return std::format("{:15} {:17} {:20} {:<7} {}", ip_.substr(0, 15),
+                     mac_str.substr(0, 17), vendor_str.substr(0, 20),
+                     packet_count_, host_str);
 }
 
 // data_store implementation
@@ -444,8 +444,8 @@ void renderer::render_loop() {
 
     // Endpoint header (port and protocol removed, aggregated by MAC:IP)
     endpoint_elements.push_back(
-        text(std::format("{:15} {:17} {:20} {} {:<5}", "Address", "MAC",
-                         "Vendor", "Hostname", "Pkts")) |
+        text(std::format("{:15} {:17} {:20} {:<7} {}", "Address", "MAC",
+                         "Vendor", "Packets", "Hostname")) |
         bold | color(Color::White));
 
     // Endpoint rows with vendor and IP version colourisation
@@ -560,8 +560,8 @@ void renderer::render_loop() {
     // Use fixed-width formatting to reduce jumpiness
     // Consolidated header: title and help text on one line
     auto title =
-        text(std::format("{} {:20} | {} | Pkts: {:6} | {:6.1f} p/s | {:>11} | "
-                         "DNS: {:3} | SPACE=view q/ESC=quit",
+        text(std::format("{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
+                         "| DNS: {:3} | SPACE=view q/ESC=quit",
                          spinner, mode_str, time_display, total_packets, pps,
                          bps_str, dns_queries)) |
         bold | color(Color::Cyan);
