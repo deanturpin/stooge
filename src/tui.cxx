@@ -400,8 +400,7 @@ void renderer::render_loop() {
   screen_ = std::ref(screen); // Store screen reference for cleanup
   screen_active_.store(true); // Mark screen as active
 
-  // Enable mouse support for scrolling
-  screen.TrackMouse(true);
+  // Mouse support disabled - using cursor keys for navigation
 
   // Start packet processing thread
   // This thread will populate the data_store while the main thread renders
@@ -572,10 +571,11 @@ void renderer::render_loop() {
     // Use fixed-width formatting to reduce jumpiness
     // Consolidated header: title and help text on one line
     auto title =
-        text(std::format("{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
-                         "| DNS: {:3} | SPACE=view q/ESC=quit",
-                         spinner, mode_str, time_display, total_packets, pps,
-                         bps_str, dns_queries)) |
+        text(std::format(
+            "{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
+            "| DNS: {:3} | \u2190\u2192=view \u2191\u2193=scroll q/ESC=quit",
+            spinner, mode_str, time_display, total_packets, pps, bps_str,
+            dns_queries)) |
         bold | color(Color::Cyan);
 
     // Build hostname list (aggregated by hostname with packet counts)
@@ -645,16 +645,21 @@ void renderer::render_loop() {
   // Capture component to handle keyboard shortcuts
   auto component_with_shortcuts =
       CatchEvent(component, [this, &screen, &view_mode](Event event) {
-        // Allow mouse wheel scrolling but ignore mouse movement
-        if (event.is_mouse()) {
-          // Let scroll wheel events through for scrolling
-          if (event.mouse().button == Mouse::WheelUp ||
-              event.mouse().button == Mouse::WheelDown)
-            return false; // Let FTXUI handle scrolling
-
-          // Block other mouse events (movement, clicks)
+        // Left/Right arrows: switch between views
+        if (event == Event::ArrowLeft) {
+          auto current = view_mode.load();
+          view_mode.store((current + 2) % 3); // Move backwards through views
           return true;
         }
+        if (event == Event::ArrowRight) {
+          auto current = view_mode.load();
+          view_mode.store((current + 1) % 3); // Move forwards through views
+          return true;
+        }
+
+        // Up/Down arrows: scroll content (handled by FTXUI frame)
+        if (event == Event::ArrowUp || event == Event::ArrowDown)
+          return false; // Let FTXUI handle scrolling
 
         // Spacebar: cycle through endpoints, packets, and hostnames views
         if (event == Event::Character(' ')) {
