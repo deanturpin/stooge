@@ -860,6 +860,7 @@ int main(int argc, char *argv[]) {
   }
 
   // Stop TUI renderer gracefully
+  std::fprintf(stderr, "Shutdown: Stopping TUI renderer...\n");
   if (use_tui && tui_renderer) {
     try {
       tui_renderer->stop();
@@ -868,6 +869,8 @@ int main(int argc, char *argv[]) {
       std::print("Warning: TUI cleanup error: {}\n", e.what());
     }
   }
+  std::fprintf(stderr, "Shutdown: TUI renderer stopped\n");
+
   {
     auto lock = std::scoped_lock{global_renderer_mutex};
     global_renderer.reset();
@@ -892,7 +895,9 @@ int main(int argc, char *argv[]) {
   std::print("Total packets processed: {}\n", packet_count);
 
   // Stop DNS resolver thread
+  std::fprintf(stderr, "Shutdown: Stopping DNS resolver...\n");
   dns::stop_resolver();
+  std::fprintf(stderr, "Shutdown: Complete!\n");
 
   // pcap handle will be automatically closed by unique_ptr destructor
   return capture_result == -1 ? 1 : 0;

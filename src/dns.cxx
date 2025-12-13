@@ -144,14 +144,18 @@ void start_resolver(std::shared_ptr<tui::traffic_monitor> store) {
 
 // Stop DNS resolution thread
 void stop_resolver() {
+  std::fprintf(stderr, "DNS: Stopping resolver...\n");
   shutdown = true;
   dns_cv.notify_one(); // Wake up DNS thread to check shutdown flag
 
+  std::fprintf(stderr, "DNS: Waiting for thread to join...\n");
   if (dns_thread && dns_thread->joinable())
     dns_thread->join();
 
+  std::fprintf(stderr, "DNS: Thread joined, cleaning up...\n");
   dns_thread.reset();
   store_ptr.reset();
+  std::fprintf(stderr, "DNS: Resolver stopped\n");
 }
 
 // Notify DNS thread that new endpoints have been added

@@ -1,5 +1,5 @@
-b35d24b (HEAD -> main, origin/main) Capitalise view titles for visual emphasis
-780f8d9 Move view title to top line, right-justified
-dd8d36c Remove non-functional scroll indicators and up/down key handling
-dfb407f (origin/release, release) Remove +X multiple IP indicator to fix column alignment
-340d81b Replace non-constexpr std library functions with constexpr-compatible versions
+1bd7bca (HEAD -> main, origin/main) Remove redundant 'Recent commits:' heading from splash screen 🤖
+5fdb773 Fix test file to use traffic_monitor instead of data_store 🤖
+b361d19 Fix slow quit and increase DNS timeout for better resolution
+e29b79f Fix git log capture and rename data_store to traffic_monitor
+b35d24b Capitalise view titles for visual emphasis

@@ -320,10 +320,10 @@ std::string traffic_monitor::get_status() const {
 
 void traffic_monitor::wait_for_work(std::condition_variable &cv,
                                     std::mutex &cv_mutex) const {
-  // Wait until notified or timeout after 30 seconds
+  // Wait until notified or timeout after 1 second (allow quick shutdown)
   // Predicate ensures we only wake when there's actual work to do
   auto lock = std::unique_lock{cv_mutex};
-  cv.wait_for(lock, std::chrono::seconds(30), [this] {
+  cv.wait_for(lock, std::chrono::seconds(1), [this] {
     // Only wake if there are unresolved IPs
     return !get_unresolved_ips().empty();
   });
