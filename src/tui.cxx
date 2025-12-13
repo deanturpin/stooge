@@ -562,14 +562,23 @@ void renderer::render_loop() {
     // Get DNS query count
     auto dns_queries = store_->get_dns_query_count();
 
+    // Determine current view name
+    auto current_view = view_mode.load();
+    auto view_name = current_view == 1   ? "Packets"
+                     : current_view == 2 ? "Hostnames"
+                                         : "Endpoints";
+
     // Use fixed-width formatting to reduce jumpiness
-    // Consolidated header: title and help text on one line
-    auto title =
+    // Consolidated header: title, help text, and view name on one line
+    auto title_line = hbox({
         text(std::format("{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
                          "| DNS: {:3} | \u2190\u2192/SPACE=view q/ESC=quit",
                          spinner, mode_str, time_display, total_packets, pps,
                          bps_str, dns_queries)) |
-        bold | color(Color::Cyan);
+            bold | color(Color::Cyan),
+        filler(),
+        text(view_name) | bold | color(Color::Yellow),
+    });
 
     // Build hostname list (aggregated by hostname with packet counts)
     auto hostname_elements = std::vector<Element>{};
@@ -614,23 +623,16 @@ void renderer::render_loop() {
 
     auto hostname_pane = vbox(hostname_elements) | ftxui::frame | flex;
 
-    // Cycle through three views with titles
-    auto current_view = view_mode.load();
+    // Return appropriate view with title line
     if (current_view == 1) {
       // Packets view (full screen)
-      auto view_title = text("Packets") | bold | color(Color::Yellow);
-      return vbox(
-          {title, separator(), view_title, separator(), packet_pane | flex});
+      return vbox({title_line, separator(), packet_pane | flex});
     } else if (current_view == 2) {
       // Hostnames view (full screen)
-      auto view_title = text("Hostnames") | bold | color(Color::Yellow);
-      return vbox(
-          {title, separator(), view_title, separator(), hostname_pane | flex});
+      return vbox({title_line, separator(), hostname_pane | flex});
     } else {
       // Endpoints view (full screen, default)
-      auto view_title = text("Endpoints") | bold | color(Color::Yellow);
-      return vbox(
-          {title, separator(), view_title, separator(), endpoint_pane | flex});
+      return vbox({title_line, separator(), endpoint_pane | flex});
     }
   });
 
