@@ -860,7 +860,7 @@ int main(int argc, char *argv[]) {
   }
 
   // Stop TUI renderer gracefully
-  std::fprintf(stderr, "Shutdown: Stopping TUI renderer...\n");
+  std::fprintf(stderr, "Shutdown: Stopping TUI renderer\n");
   if (use_tui && tui_renderer) {
     try {
       tui_renderer->stop();
@@ -887,17 +887,17 @@ int main(int argc, char *argv[]) {
     std::print("\n\nCapture stopped by user (Ctrl+C)\n");
   } else {
     if (live_mode)
-      std::print("\n\nCapture complete!\n");
+      std::print("\n\nCapture complete\n");
     else
-      std::print("\n\nReplay complete!\n");
+      std::print("\n\nReplay complete\n");
   }
 
   std::print("Total packets processed: {}\n", packet_count);
 
   // Stop DNS resolver thread
-  std::fprintf(stderr, "Shutdown: Stopping DNS resolver...\n");
+  std::fprintf(stderr, "Shutdown: Stopping DNS resolver\n");
   dns::stop_resolver();
-  std::fprintf(stderr, "Shutdown: Complete!\n");
+  std::fprintf(stderr, "Shutdown: Complete\n");
 
   // pcap handle will be automatically closed by unique_ptr destructor
   return capture_result == -1 ? 1 : 0;
