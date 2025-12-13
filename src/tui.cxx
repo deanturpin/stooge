@@ -694,16 +694,6 @@ void renderer::render_loop() {
 
   // Reset terminal to clean up any leftover escape codes
   std::print("\033[0m\033[?25h"); // Reset attributes and show cursor
-
-  // Quit callback disabled for testing - suspected double-free issue
-  // auto callback_copy = std::function<void()>{};
-  // {
-  //   auto lock = std::scoped_lock{status_mutex_};
-  //   if (quit_callback_)
-  //     callback_copy = quit_callback_;
-  // }
-  // if (callback_copy)
-  //   callback_copy();
 }
 
 } // namespace tui

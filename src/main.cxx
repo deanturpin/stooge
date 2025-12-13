@@ -66,6 +66,12 @@
 // captured
 constexpr auto SPEEDUP_FACTOR = 1.0;
 
+// PCAP buffer size (32MB) for live capture
+constexpr auto PCAP_BUFFER_SIZE = 32 * 1024 * 1024;
+
+// DNS work timeout - how long DNS thread waits for new work
+constexpr auto DNS_WORK_TIMEOUT = std::chrono::seconds{1};
+
 // Global flag for signal handling
 static volatile sig_atomic_t stop_capture = 0;
 static std::shared_ptr<tui::renderer> global_renderer{nullptr};
@@ -531,7 +537,7 @@ int main(int argc, char *argv[]) {
     pcap_set_snaplen(temp_handle, 65535); // Capture full packets
     pcap_set_promisc(temp_handle, 1);     // Enable promiscuous mode
     pcap_set_timeout(temp_handle, 1000);  // 1 second timeout
-    pcap_set_buffer_size(temp_handle, 32 * 1024 * 1024); // 32MB buffer
+    pcap_set_buffer_size(temp_handle, PCAP_BUFFER_SIZE);
 
     // Activate the capture
     if (pcap_activate(temp_handle) != 0) {
