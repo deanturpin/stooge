@@ -10,6 +10,9 @@ build/
 *.so
 *.dylib
 
+# Generated files
+recent-commits.txt
+
 # IDE files
 .vscode/
 .idea/

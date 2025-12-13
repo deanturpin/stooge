@@ -1,5 +1,0 @@
-82b0e83 (HEAD -> main, origin/main) Fix slow quit by reducing DNS wait timeout and add shutdown debug logging
-1bd7bca Remove redundant 'Recent commits:' heading from splash screen 🤖
-5fdb773 Fix test file to use traffic_monitor instead of data_store 🤖
-b361d19 Fix slow quit and increase DNS timeout for better resolution
-e29b79f Fix git log capture and rename data_store to traffic_monitor
