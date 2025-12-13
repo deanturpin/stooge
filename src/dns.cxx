@@ -43,17 +43,25 @@ std::string resolve_blocking(std::string_view ip) {
   return hostname;
 }
 
-// Resolve DNS with timeout (2 second limit)
+// Resolve DNS with interruptible timeout (5 second limit)
+// Checks shutdown flag every 100ms for quick exit
 std::string resolve_with_timeout(std::string_view ip) {
   // Launch async DNS lookup
   auto future =
       std::async(std::launch::async, [ip] { return resolve_blocking(ip); });
 
-  // Wait for result with 2 second timeout
-  if (future.wait_for(2s) == std::future_status::ready)
-    return future.get();
+  // Wait for result with interruptible timeout (check every 100ms)
+  auto elapsed = 0ms;
+  constexpr auto timeout = 5s;
+  constexpr auto check_interval = 100ms;
 
-  // Timeout - return empty string
+  while (elapsed < timeout && !shutdown) {
+    if (future.wait_for(check_interval) == std::future_status::ready)
+      return future.get();
+    elapsed += check_interval;
+  }
+
+  // Timeout or shutdown - return empty string
   return {};
 }
 
