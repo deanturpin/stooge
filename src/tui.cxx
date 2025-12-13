@@ -564,9 +564,9 @@ void renderer::render_loop() {
 
     // Determine current view name
     auto current_view = view_mode.load();
-    auto view_name = current_view == 1   ? "Packets"
-                     : current_view == 2 ? "Hostnames"
-                                         : "Endpoints";
+    auto view_name = current_view == 1   ? "PACKETS"
+                     : current_view == 2 ? "HOSTNAMES"
+                                         : "ENDPOINTS";
 
     // Use fixed-width formatting to reduce jumpiness
     // Consolidated header: title, help text, and view name on one line
