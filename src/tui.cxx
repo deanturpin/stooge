@@ -33,11 +33,7 @@ std::string endpoint_stats::to_string() const {
   auto mac_str = mac_address_.empty() ? "-" : mac_address_;
   auto vendor_str = vendor_.empty() || vendor_ == "-" ? "-" : vendor_;
   auto host_str = hostname_.empty() || hostname_ == ip_ ? "-" : hostname_;
-
-  // Show IP with count if multiple IPs seen for this MAC
   auto ip_str = ip_.empty() ? "-" : ip_;
-  if (all_ips_.size() > 1)
-    ip_str = std::format("{} (+{})", ip_.substr(0, 12), all_ips_.size() - 1);
 
   // Packets column before hostname to keep alignment consistent
   return std::format("{:15} {:17} {:20} {:<7} {}", ip_str,
