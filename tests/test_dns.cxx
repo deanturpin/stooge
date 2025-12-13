@@ -4,8 +4,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
 
-TEST_CASE("data_store manages endpoints correctly", "[tui]") {
-  auto store = std::make_shared<tui::data_store>();
+TEST_CASE("traffic_monitor manages endpoints correctly", "[tui]") {
+  auto store = std::make_shared<tui::traffic_monitor>();
 
   SECTION("initially has no endpoints") {
     auto endpoints = store->get_endpoints();
@@ -59,8 +59,8 @@ TEST_CASE("data_store manages endpoints correctly", "[tui]") {
   }
 }
 
-TEST_CASE("data_store manages packets correctly", "[tui]") {
-  auto store = std::make_shared<tui::data_store>();
+TEST_CASE("traffic_monitor manages packets correctly", "[tui]") {
+  auto store = std::make_shared<tui::traffic_monitor>();
 
   SECTION("can add and retrieve packets") {
     auto pkt = tui::packet_entry{};
@@ -96,8 +96,8 @@ TEST_CASE("data_store manages packets correctly", "[tui]") {
   }
 }
 
-TEST_CASE("data_store manages capture mode correctly", "[tui]") {
-  auto store = std::make_shared<tui::data_store>();
+TEST_CASE("traffic_monitor manages capture mode correctly", "[tui]") {
+  auto store = std::make_shared<tui::traffic_monitor>();
 
   SECTION("defaults to replay mode") { REQUIRE_FALSE(store->is_live()); }
 
