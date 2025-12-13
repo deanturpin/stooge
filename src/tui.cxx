@@ -477,8 +477,7 @@ void renderer::render_loop() {
       endpoint_elements.push_back(ep_text);
     }
 
-    auto endpoint_pane =
-        vbox(endpoint_elements) | vscroll_indicator | ftxui::frame | flex;
+    auto endpoint_pane = vbox(endpoint_elements) | ftxui::frame | flex;
 
     // Build packet list (bottom pane)
     auto packet_elements = std::vector<Element>{};
@@ -533,8 +532,7 @@ void renderer::render_loop() {
       packet_elements.push_back(row);
     }
 
-    auto packet_pane =
-        vbox(packet_elements) | vscroll_indicator | ftxui::frame | flex;
+    auto packet_pane = vbox(packet_elements) | ftxui::frame | flex;
 
     // Title with mode indicator and spinner
     auto frame = spinner_frame_.load();
@@ -567,11 +565,10 @@ void renderer::render_loop() {
     // Use fixed-width formatting to reduce jumpiness
     // Consolidated header: title and help text on one line
     auto title =
-        text(std::format(
-            "{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
-            "| DNS: {:3} | \u2190\u2192=view \u2191\u2193=scroll q/ESC=quit",
-            spinner, mode_str, time_display, total_packets, pps, bps_str,
-            dns_queries)) |
+        text(std::format("{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
+                         "| DNS: {:3} | \u2190\u2192/SPACE=view q/ESC=quit",
+                         spinner, mode_str, time_display, total_packets, pps,
+                         bps_str, dns_queries)) |
         bold | color(Color::Cyan);
 
     // Build hostname list (aggregated by hostname with packet counts)
@@ -615,8 +612,7 @@ void renderer::render_loop() {
       hostname_elements.push_back(row);
     }
 
-    auto hostname_pane =
-        vbox(hostname_elements) | vscroll_indicator | ftxui::frame | flex;
+    auto hostname_pane = vbox(hostname_elements) | ftxui::frame | flex;
 
     // Cycle through three views with titles
     auto current_view = view_mode.load();
@@ -652,10 +648,6 @@ void renderer::render_loop() {
           view_mode.store((current + 1) % 3); // Move forwards through views
           return true;
         }
-
-        // Up/Down arrows: scroll content (handled by FTXUI frame)
-        if (event == Event::ArrowUp || event == Event::ArrowDown)
-          return false; // Let FTXUI handle scrolling
 
         // Spacebar: cycle through endpoints, packets, and hostnames views
         if (event == Event::Character(' ')) {
