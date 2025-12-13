@@ -97,6 +97,26 @@ static_assert(INET_ADDRSTRLEN >= 16,
               "IPv4 string buffer must fit xxx.xxx.xxx.xxx");
 
 namespace {
+// ICMP message types
+constexpr auto ICMP_ECHO_REPLY = 0;
+constexpr auto ICMP_DEST_UNREACHABLE = 3;
+constexpr auto ICMP_ECHO_REQUEST = 8;
+constexpr auto ICMP_TIME_EXCEEDED = 11;
+
+// ICMPv6 message types
+constexpr auto ICMPV6_DEST_UNREACHABLE = 1;
+constexpr auto ICMPV6_TIME_EXCEEDED = 3;
+constexpr auto ICMPV6_ECHO_REQUEST = 128;
+constexpr auto ICMPV6_ECHO_REPLY = 129;
+constexpr auto ICMPV6_ROUTER_SOLICITATION = 133;
+constexpr auto ICMPV6_ROUTER_ADVERTISEMENT = 134;
+constexpr auto ICMPV6_NEIGHBOUR_SOLICITATION = 135;
+constexpr auto ICMPV6_NEIGHBOUR_ADVERTISEMENT = 136;
+
+// Minimum header sizes
+constexpr auto ICMP_HEADER_SIZE = 8uz;
+constexpr auto ICMPV6_HEADER_SIZE = 8uz;
+
 // Constexpr protocol validation helpers
 constexpr bool is_tcp_protocol(int protocol) { return protocol == IPPROTO_TCP; }
 
@@ -229,8 +249,31 @@ std::optional<packet_info> parse_ipv4(const u_char *packet,
         info.payload_length_ = header->caplen - payload_offset;
       }
     }
+  } else if (iph->ip_p == IPPROTO_ICMP) {
+    // Extract ICMP type and code
+    auto ip_header_len = iph->ip_hl * 4;
+    if (header->caplen >=
+        sizeof(struct ether_header) + ip_header_len + ICMP_HEADER_SIZE) {
+      auto icmp_start = packet + sizeof(struct ether_header) + ip_header_len;
+      auto icmp_type = icmp_start[0];
+      auto icmp_code = icmp_start[1];
+
+      // Format ICMP message based on type
+      if (icmp_type == ICMP_ECHO_REQUEST)
+        info.protocol_ = "ICMP Echo Request (ping)";
+      else if (icmp_type == ICMP_ECHO_REPLY)
+        info.protocol_ = "ICMP Echo Reply (pong)";
+      else if (icmp_type == ICMP_DEST_UNREACHABLE)
+        info.protocol_ = "ICMP Dest Unreachable";
+      else if (icmp_type == ICMP_TIME_EXCEEDED)
+        info.protocol_ = "ICMP Time Exceeded";
+      else
+        info.protocol_ = std::format("ICMP Type {}", icmp_type);
+    } else {
+      info.protocol_ = "ICMP";
+    }
   } else {
-    // Other IP protocols (ICMP, etc.)
+    // Other IP protocols
     info.protocol_ = "IP";
   }
 
@@ -302,8 +345,37 @@ std::optional<packet_info> parse_ipv6(const u_char *packet,
         info.payload_length_ = header->caplen - payload_offset;
       }
     }
+  } else if (next_header == IPPROTO_ICMPV6) {
+    // Extract ICMPv6 type and code
+    if (header->caplen >=
+        sizeof(struct ether_header) + ipv6_header_size + ICMPV6_HEADER_SIZE) {
+      auto icmp_type = transport_start[0];
+      auto icmp_code = transport_start[1];
+
+      // Format ICMPv6 message based on type
+      if (icmp_type == ICMPV6_ECHO_REQUEST)
+        info.protocol_ = "ICMPv6 Echo Request (ping6)";
+      else if (icmp_type == ICMPV6_ECHO_REPLY)
+        info.protocol_ = "ICMPv6 Echo Reply (pong6)";
+      else if (icmp_type == ICMPV6_DEST_UNREACHABLE)
+        info.protocol_ = "ICMPv6 Dest Unreachable";
+      else if (icmp_type == ICMPV6_TIME_EXCEEDED)
+        info.protocol_ = "ICMPv6 Time Exceeded";
+      else if (icmp_type == ICMPV6_ROUTER_SOLICITATION)
+        info.protocol_ = "ICMPv6 Router Solicitation";
+      else if (icmp_type == ICMPV6_ROUTER_ADVERTISEMENT)
+        info.protocol_ = "ICMPv6 Router Advertisement";
+      else if (icmp_type == ICMPV6_NEIGHBOUR_SOLICITATION)
+        info.protocol_ = "ICMPv6 Neighbour Solicitation";
+      else if (icmp_type == ICMPV6_NEIGHBOUR_ADVERTISEMENT)
+        info.protocol_ = "ICMPv6 Neighbour Advertisement";
+      else
+        info.protocol_ = std::format("ICMPv6 Type {}", icmp_type);
+    } else {
+      info.protocol_ = "ICMPv6";
+    }
   } else {
-    // Other IPv6 protocols (ICMPv6, etc.)
+    // Other IPv6 protocols
     info.protocol_ = "IPv6";
   }
 

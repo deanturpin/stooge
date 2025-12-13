@@ -29,27 +29,29 @@ run:
 
 # Run container in text mode (no TTY required)
 text:
-	docker run --rm -v $(PWD):/data --entrypoint /app/build/stooge $(IMAGE) --no-tui /data/capture.pcapng
+	docker run --rm -v $(PWD):/data --entrypoint /app/stooge $(IMAGE) --no-tui /data/capture.pcapng
 
 # Quick replay test in text mode (3 second timeout for rapid iteration)
 quick: build
-	timeout 100 docker run --rm -v $(PWD):/data --entrypoint /app/build/stooge $(IMAGE) --no-tui /data/capture.pcapng || true
+	timeout 100 docker run --rm -v $(PWD):/data --entrypoint /app/stooge $(IMAGE) --no-tui /data/capture.pcapng || true
 
-# Run unit tests
-test: build
-	docker run --rm $(IMAGE) /bin/sh -c "cd /app/build && ctest --output-on-failure"
+# Run unit tests (uses builder stage since runtime image doesn't include tests)
+test:
+	docker build --target builder -t $(IMAGE)-builder .
+	docker run --rm $(IMAGE)-builder /bin/sh -c "cd /app/build && ctest --output-on-failure"
 
 # Run live capture (requires elevated privileges)
 live: build
 	@echo "Starting live capture (requires sudo/elevated privileges)..."
 	docker run --rm -it --network=host $(IMAGE)
 
-# Run with GDB for debugging crashes
-gdb: build
+# Run with GDB for debugging crashes (uses builder stage with debug symbols)
+gdb:
+	docker build --target builder -t $(IMAGE)-builder .
 	@echo "Starting GDB debugging session..."
 	docker run --rm -it --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
-		-v $(PWD):/data --entrypoint /bin/bash $(IMAGE) \
-		-c "gdb -ex run --args /app/build/stooge /data/capture.pcapng"
+		-v $(PWD):/data --entrypoint /bin/bash $(IMAGE)-builder \
+		-c "apt-get update && apt-get install -y gdb && gdb -ex run --args /app/build/stooge /data/capture.pcapng"
 
 # Remove Docker image
 clean:
