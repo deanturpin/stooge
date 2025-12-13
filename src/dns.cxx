@@ -23,7 +23,7 @@ namespace {
 // Single DNS resolution thread
 auto dns_thread = std::unique_ptr<std::thread>{};
 auto shutdown = std::atomic<bool>{false};
-auto store_ptr = std::shared_ptr<tui::data_store>{};
+auto store_ptr = std::shared_ptr<tui::traffic_monitor>{};
 auto dns_cv = std::condition_variable{};
 auto dns_mutex = std::mutex{};
 
@@ -125,7 +125,7 @@ void dns_resolver_thread() {
 } // anonymous namespace
 
 // Start DNS resolution thread that works on endpoint map
-void start_resolver(std::shared_ptr<tui::data_store> store) {
+void start_resolver(std::shared_ptr<tui::traffic_monitor> store) {
   if (dns_thread)
     return; // Already running
 

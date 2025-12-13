@@ -7,13 +7,13 @@
 //    - Reads packets from PCAP file or live capture using libpcap
 //    - Parses packet headers (Ethernet, IP, TCP/UDP)
 //    - Extracts endpoint information (IP, port, protocol, MAC, vendor)
-//    - Updates data_store with packet and endpoint information
+//    - Updates traffic_monitor with packet and endpoint information
 //    - Respects original packet timing for realistic replay
 //    - Notifies DNS thread when new endpoints are added
 //
 // 2. DNS Resolver Thread (background hostname resolution)
 //    - Waits for notification of new endpoints (or 5s timeout)
-//    - Scans data_store endpoint map for unresolved IPs
+//    - Scans traffic_monitor endpoint map for unresolved IPs
 //    - Performs reverse DNS lookups with 2-second timeout per IP
 //    - Updates all endpoints with resolved hostnames (or IP if failed)
 //    - Tracks resolved IPs to prevent duplicate lookups
@@ -23,7 +23,7 @@
 //    - Manages FTXUI screen and component lifecycle
 //    - Renders endpoint list (left pane) and packet list (right pane)
 //    - Handles keyboard shortcuts (q/Esc=quit, p=pause, h=help)
-//    - Reads from data_store (thread-safe with mutexes)
+//    - Reads from traffic_monitor (thread-safe with mutexes)
 //    - Displays live capture vs PCAP replay mode indicator
 //    - Shows packet timestamp and total packet count
 //
@@ -34,9 +34,9 @@
 //    - Ensures UI updates smoothly during packet processing
 //
 // Thread Safety:
-// - data_store uses std::mutex with std::scoped_lock for all operations
-// - DNS resolver thread safely reads and writes data_store
-// - TUI threads safely read data_store for rendering
+// - traffic_monitor uses std::mutex with std::scoped_lock for all operations
+// - DNS resolver thread safely reads and writes traffic_monitor
+// - TUI threads safely read traffic_monitor for rendering
 // - Signal handler safely stops TUI renderer
 //
 #include "dissector.hxx"
@@ -593,7 +593,7 @@ int main(int argc, char *argv[]) {
   dissectors.load("dissectors/dns.lua");
 
   // Initialise TUI data store (but don't start renderer yet)
-  auto tui_store = std::make_shared<tui::data_store>();
+  auto tui_store = std::make_shared<tui::traffic_monitor>();
   tui_store->set_capture_mode(
       live_mode,
       interface_name); // Set mode before packet processing

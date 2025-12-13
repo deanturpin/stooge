@@ -14,11 +14,13 @@ format:
 
 # Build Docker image
 build:
+	git log --oneline --decorate -5 > recent-commits.txt 2>/dev/null || echo "No git history available" > recent-commits.txt
 	# docker build --no-cache -t $(IMAGE) .
 	docker build -t $(IMAGE) .
 
 # Build Docker image
 build-clean:
+	git log --oneline --decorate -5 > recent-commits.txt 2>/dev/null || echo "No git history available" > recent-commits.txt
 	docker build --no-cache -t $(IMAGE) .
 
 # Run container with sample PCAP file (interactive TUI mode)

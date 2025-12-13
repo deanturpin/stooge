@@ -41,12 +41,12 @@ std::string endpoint_stats::to_string() const {
                      packet_count_, host_str);
 }
 
-// data_store implementation
-void data_store::add_endpoint(std::string_view ip, uint16_t port,
-                              std::string_view protocol,
-                              std::string_view hostname,
-                              std::string_view vendor,
-                              std::string_view mac_address) {
+// traffic_monitor implementation
+void traffic_monitor::add_endpoint(std::string_view ip, uint16_t port,
+                                   std::string_view protocol,
+                                   std::string_view hostname,
+                                   std::string_view vendor,
+                                   std::string_view mac_address) {
   auto lock = std::scoped_lock{mutex_};
 
   // Key by MAC only - consolidate all IPs for the same physical device
@@ -78,7 +78,7 @@ void data_store::add_endpoint(std::string_view ip, uint16_t port,
   ep.last_seen_ = std::chrono::steady_clock::now();
 }
 
-void data_store::add_packet(const packet_entry &entry) {
+void traffic_monitor::add_packet(const packet_entry &entry) {
   auto lock = std::scoped_lock{mutex_};
   packets_.push_back(entry);
   if (packets_.size() > MAX_PACKETS)
@@ -107,7 +107,7 @@ void data_store::add_packet(const packet_entry &entry) {
     packet_timestamps_.pop_front();
 }
 
-std::vector<endpoint_stats> data_store::get_endpoints() const {
+std::vector<endpoint_stats> traffic_monitor::get_endpoints() const {
   auto lock = std::scoped_lock{mutex_};
   auto result = std::vector<endpoint_stats>{};
   result.reserve(endpoints_.size());
@@ -144,7 +144,8 @@ std::vector<endpoint_stats> data_store::get_endpoints() const {
   return result;
 }
 
-std::vector<packet_entry> data_store::get_recent_packets(size_t count) const {
+std::vector<packet_entry>
+traffic_monitor::get_recent_packets(size_t count) const {
   auto lock = std::scoped_lock{mutex_};
   auto result = std::vector<packet_entry>{};
 
@@ -155,12 +156,12 @@ std::vector<packet_entry> data_store::get_recent_packets(size_t count) const {
   return result;
 }
 
-size_t data_store::get_total_packets() const {
+size_t traffic_monitor::get_total_packets() const {
   // Atomic counter - no lock needed
   return total_packets_.load();
 }
 
-double data_store::get_packets_per_second() const {
+double traffic_monitor::get_packets_per_second() const {
   auto lock = std::scoped_lock{mutex_};
 
   if (packet_timestamps_.empty())
@@ -187,7 +188,7 @@ double data_store::get_packets_per_second() const {
   return static_cast<double>(packet_timestamps_.size()) / seconds;
 }
 
-double data_store::get_bits_per_second() const {
+double traffic_monitor::get_bits_per_second() const {
   auto lock = std::scoped_lock{mutex_};
 
   if (bandwidth_samples_.empty())
@@ -219,36 +220,36 @@ double data_store::get_bits_per_second() const {
   return static_cast<double>(total_bytes) * 8.0 / seconds;
 }
 
-void data_store::increment_dns_queries() {
+void traffic_monitor::increment_dns_queries() {
   // Atomic increment - no lock needed
   dns_query_count_.fetch_add(1);
 }
 
-size_t data_store::get_dns_query_count() const {
+size_t traffic_monitor::get_dns_query_count() const {
   // Atomic read - no lock needed
   return dns_query_count_.load();
 }
 
-void data_store::set_capture_mode(bool is_live,
-                                  std::string_view interface_name) {
+void traffic_monitor::set_capture_mode(bool is_live,
+                                       std::string_view interface_name) {
   // Set capture mode once during initialization
   is_live_capture_.store(is_live);
   auto lock = std::scoped_lock{mutex_};
   interface_name_ = interface_name;
 }
 
-void data_store::set_capture_time(double current_seconds) {
+void traffic_monitor::set_capture_time(double current_seconds) {
   // Atomic write - no lock needed
   current_packet_time_.store(current_seconds);
 }
 
-void data_store::set_last_packet_timestamp(time_t seconds,
-                                           suseconds_t microseconds) {
+void traffic_monitor::set_last_packet_timestamp(time_t seconds,
+                                                suseconds_t microseconds) {
   // Store actual wall-clock timestamp from PCAP header
   last_packet_timestamp_.store(seconds);
 }
 
-std::string data_store::get_time_display() const {
+std::string traffic_monitor::get_time_display() const {
   // Get actual timestamp if available, otherwise fall back to elapsed time
   auto timestamp = last_packet_timestamp_.load();
 
@@ -270,17 +271,17 @@ std::string data_store::get_time_display() const {
   return std::format("{:02d}:{:02d}:{:02d}", hours, minutes, seconds);
 }
 
-bool data_store::is_live() const {
+bool traffic_monitor::is_live() const {
   // Atomic read - no lock needed
   return is_live_capture_.load();
 }
 
-std::string data_store::get_interface_name() const {
+std::string traffic_monitor::get_interface_name() const {
   auto lock = std::scoped_lock{mutex_};
   return interface_name_;
 }
 
-std::vector<std::string> data_store::get_unresolved_ips() const {
+std::vector<std::string> traffic_monitor::get_unresolved_ips() const {
   auto lock = std::scoped_lock{mutex_};
   auto unresolved = std::vector<std::string>{};
 
@@ -296,8 +297,8 @@ std::vector<std::string> data_store::get_unresolved_ips() const {
   return unresolved;
 }
 
-void data_store::update_hostname(std::string_view ip,
-                                 std::string_view hostname) {
+void traffic_monitor::update_hostname(std::string_view ip,
+                                      std::string_view hostname) {
   auto lock = std::scoped_lock{mutex_};
 
   // Update all endpoints with this IP address
@@ -307,18 +308,18 @@ void data_store::update_hostname(std::string_view ip,
   }
 }
 
-void data_store::set_status(std::string_view message) {
+void traffic_monitor::set_status(std::string_view message) {
   auto lock = std::scoped_lock{mutex_};
   status_message_ = message;
 }
 
-std::string data_store::get_status() const {
+std::string traffic_monitor::get_status() const {
   auto lock = std::scoped_lock{mutex_};
   return status_message_;
 }
 
-void data_store::wait_for_work(std::condition_variable &cv,
-                               std::mutex &cv_mutex) const {
+void traffic_monitor::wait_for_work(std::condition_variable &cv,
+                                    std::mutex &cv_mutex) const {
   // Wait until notified or timeout after 30 seconds
   // Predicate ensures we only wake when there's actual work to do
   auto lock = std::unique_lock{cv_mutex};
@@ -328,13 +329,13 @@ void data_store::wait_for_work(std::condition_variable &cv,
   });
 }
 
-void data_store::notify_new_endpoints(std::condition_variable &cv) {
+void traffic_monitor::notify_new_endpoints(std::condition_variable &cv) {
   // No lock needed - just notify waiting threads
   cv.notify_one();
 }
 
 // renderer implementation
-renderer::renderer(std::shared_ptr<data_store> store) : store_(store) {}
+renderer::renderer(std::shared_ptr<traffic_monitor> store) : store_(store) {}
 
 renderer::~renderer() { stop(); }
 
@@ -399,7 +400,7 @@ void renderer::render_loop() {
   // Mouse support disabled - using cursor keys for navigation
 
   // Start packet processing thread
-  // This thread will populate the data_store while the main thread renders
+  // This thread will populate the traffic_monitor while the main thread renders
   auto packet_thread = std::jthread{[this](std::stop_token st) {
     std::print(stderr, "Packet processing thread started\n");
 

@@ -4,12 +4,12 @@
 #include <memory>
 
 namespace tui {
-class data_store;
+class traffic_monitor;
 }
 
 namespace dns {
 // Start DNS resolution thread that works on endpoint map
-void start_resolver(std::shared_ptr<tui::data_store> store);
+void start_resolver(std::shared_ptr<tui::traffic_monitor> store);
 
 // Stop DNS resolution thread
 void stop_resolver();

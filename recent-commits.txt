@@ -1,0 +1,5 @@
+b35d24b (HEAD -> main, origin/main) Capitalise view titles for visual emphasis
+780f8d9 Move view title to top line, right-justified
+dd8d36c Remove non-functional scroll indicators and up/down key handling
+dfb407f (origin/release, release) Remove +X multiple IP indicator to fix column alignment
+340d81b Replace non-constexpr std library functions with constexpr-compatible versions

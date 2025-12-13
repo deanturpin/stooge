@@ -40,13 +40,10 @@ WORKDIR /app
 # Copy all source files into container
 COPY . .
 
-# Capture git log before removing .git directory
-RUN git log --oneline --decorate -5 > /app/recent-commits.txt 2>/dev/null || echo "No git history available" > /app/recent-commits.txt
-
 # Build using CMake (parallel build with all available cores)
 RUN cmake -B build && cmake --build build --parallel
 
-# Remove git history to reduce image size
+# Remove git history to reduce image size (commits already captured in Makefile)
 RUN rm -rf /app/.git
 
 # Entry point - run stooge with splash screen wrapper

@@ -46,7 +46,7 @@ struct packet_entry {
 };
 
 // Thread-safe data store for TUI
-class data_store {
+class traffic_monitor {
 public:
   // Add or update endpoint statistics
   void add_endpoint(std::string_view ip, uint16_t port,
@@ -155,7 +155,7 @@ private:
 // Main TUI renderer - manages screen updates
 class renderer {
 public:
-  renderer(std::shared_ptr<data_store> store);
+  renderer(std::shared_ptr<traffic_monitor> store);
   ~renderer();
 
   // Start rendering loop (runs in separate thread)
@@ -174,7 +174,7 @@ public:
   void set_packet_processor(std::function<void(std::stop_token)> processor);
 
 private:
-  std::shared_ptr<data_store> store_;
+  std::shared_ptr<traffic_monitor> store_;
   std::string status_message_; // Status line message
   std::mutex status_mutex_;    // Protect status message updates
   std::optional<std::reference_wrapper<ftxui::ScreenInteractive>>
