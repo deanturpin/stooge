@@ -47,4 +47,4 @@ RUN cmake -B build && cmake --build build --parallel
 RUN rm -rf /app/.git
 
 # Entry point - run stooge with splash screen wrapper
-ENTRYPOINT ["sh", "-c", "clear && figlet stooge && cat /etc/os-release && echo && echo 'Recent commits:' && cat /app/recent-commits.txt && echo && sleep 2 && exec ./build/stooge \"$@\"", "--"]
+ENTRYPOINT ["sh", "-c", "clear && figlet stooge && cat /etc/os-release && echo && cat /app/recent-commits.txt && echo && sleep 2 && exec ./build/stooge \"$@\"", "--"]
