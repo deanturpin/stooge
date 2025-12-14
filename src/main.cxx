@@ -958,27 +958,55 @@ int main(int argc, char *argv[]) {
             auto pkt = tui::packet_entry{};
             pkt.number_ = packet_count;
             pkt.timestamp_ = packet_offset;
-            pkt.protocol_ = info->vlan_id_ > 0
-                                ? std::format("{} [VLAN {}]", info->protocol_,
-                                              info->vlan_id_)
-                                : info->protocol_;
+
+            // Set transport layer protocol (with VLAN tag if present)
+            pkt.transport_ = info->vlan_id_ > 0
+                                 ? std::format("{} [VLAN {}]", info->protocol_,
+                                               info->vlan_id_)
+                                 : info->protocol_;
+
             pkt.src_ = format_endpoint(info->src_ip_, info->src_port_);
             pkt.dst_ = format_endpoint(info->dst_ip_, info->dst_port_);
             pkt.bytes_ = info->length_;
 
+            // Try to detect application layer protocol from dissector or port
+            // number
             if (info->payload_ && info->payload_length_ > 0) {
               auto dissected = dissectors.dissect(
                   info->payload_, info->payload_length_, info->src_port_,
                   info->dst_port_, info->protocol_);
-              if (dissected)
+              if (dissected) {
+                pkt.application_ = dissected->protocol_;
                 pkt.dissection_ = std::format("{} {}", dissected->protocol_,
                                               dissected->info_);
+              }
             }
 
-            if (packet_count % 500 == 0)
+            // If no dissector result, infer from well-known ports
+            if (pkt.application_.empty()) {
+              if (info->src_port_ == 53 || info->dst_port_ == 53)
+                pkt.application_ = "DNS";
+              else if (info->src_port_ == 5353 || info->dst_port_ == 5353)
+                pkt.application_ = "mDNS";
+              else if (info->src_port_ == 443 || info->dst_port_ == 443)
+                pkt.application_ = "HTTPS";
+              else if (info->src_port_ == 80 || info->dst_port_ == 80)
+                pkt.application_ = "HTTP";
+              else if (info->src_port_ == 5222 || info->dst_port_ == 5222)
+                pkt.application_ = "XMPP";
+              else if (info->src_port_ == 22 || info->dst_port_ == 22)
+                pkt.application_ = "SSH";
+            }
+
+            if (packet_count % 500 == 0) {
+              auto proto_display =
+                  pkt.application_.empty()
+                      ? pkt.transport_
+                      : std::format("{}/{}", pkt.transport_, pkt.application_);
               tui_store->set_status(std::format("Last packet: {} {} → {}",
-                                                pkt.protocol_, pkt.src_,
+                                                proto_display, pkt.src_,
                                                 pkt.dst_));
+            }
 
             tui_store->add_packet(pkt);
           }

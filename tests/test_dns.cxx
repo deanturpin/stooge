@@ -66,7 +66,8 @@ TEST_CASE("traffic_monitor manages packets correctly", "[tui]") {
     auto pkt = tui::packet_entry{};
     pkt.number_ = 1uz;
     pkt.timestamp_ = 0.0;
-    pkt.protocol_ = "TCP";
+    pkt.transport_ = "TCP";
+    pkt.application_ = "HTTP";
     pkt.src_ = "192.168.1.1:80";
     pkt.dst_ = "192.168.1.2:443";
     pkt.bytes_ = 1500uz;
@@ -78,7 +79,8 @@ TEST_CASE("traffic_monitor manages packets correctly", "[tui]") {
     auto packets = store->get_recent_packets(10uz);
     REQUIRE(packets.size() == 1uz);
     REQUIRE(packets[0].number_ == 1uz);
-    REQUIRE(packets[0].protocol_ == "TCP");
+    REQUIRE(packets[0].transport_ == "TCP");
+    REQUIRE(packets[0].application_ == "HTTP");
     REQUIRE(packets[0].dissection_ == "HTTP GET /");
   }
 

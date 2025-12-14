@@ -540,38 +540,39 @@ void renderer::render_loop() {
       max_dst_width = std::max(max_dst_width, pkt.dst_.length());
     }
 
-    // Packet header with dynamic widths
+    // Packet header with dynamic widths and separate transport/application
+    // columns
     packet_elements.push_back(
-        text(std::format("{:6} {:8} {:13} {:<{}} {:<{}} {:6}", "#", "Time",
-                         "Proto", "Source", max_src_width, "Destination",
-                         max_dst_width, "Bytes")) |
+        text(std::format("{:6} {:8} {:9} {:9} {:<{}} {:<{}} {:6}", "#", "Time",
+                         "Transport", "App", "Source", max_src_width,
+                         "Destination", max_dst_width, "Bytes")) |
         bold | color(Color::White));
 
     // Packet rows with dynamic widths and protocol colourisation
     for (const auto &pkt : packets) {
       auto time_str = std::format("{:.3f}", pkt.timestamp_);
-      auto row =
-          text(std::format("{:<6} {:>8} {:<13} {:<{}} {:<{}} {:>6}",
-                           pkt.number_, time_str, pkt.protocol_, pkt.src_,
-                           max_src_width, pkt.dst_, max_dst_width, pkt.bytes_));
+      auto row = text(std::format("{:<6} {:>8} {:<9} {:<9} {:<{}} {:<{}} {:>6}",
+                                  pkt.number_, time_str, pkt.transport_,
+                                  pkt.application_, pkt.src_, max_src_width,
+                                  pkt.dst_, max_dst_width, pkt.bytes_));
 
       // Detect IPv6 by checking if source contains multiple colons
       auto is_ipv6 = std::count(pkt.src_.begin(), pkt.src_.end(), ':') > 1;
 
-      // Colourise by protocol and IP version
+      // Colourise by transport protocol and IP version
       if (is_ipv6) {
         // IPv6 packets in lighter colours
-        if (pkt.protocol_ == "TCP")
+        if (pkt.transport_.starts_with("TCP"))
           row = row | color(Color::GreenLight);
-        else if (pkt.protocol_ == "UDP")
+        else if (pkt.transport_.starts_with("UDP"))
           row = row | color(Color::YellowLight);
         else
           row = row | color(Color::CyanLight);
       } else {
         // IPv4 packets in standard colours
-        if (pkt.protocol_ == "TCP")
+        if (pkt.transport_.starts_with("TCP"))
           row = row | color(Color::Green);
-        else if (pkt.protocol_ == "UDP")
+        else if (pkt.transport_.starts_with("UDP"))
           row = row | color(Color::Yellow);
         else
           row = row | color(Color::White);

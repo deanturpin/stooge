@@ -37,10 +37,11 @@ struct endpoint_stats {
 // Packet information for display
 struct packet_entry {
   size_t number_;
-  double timestamp_;     // Seconds from start (0 for live mode)
-  std::string protocol_; // TCP, UDP, etc.
-  std::string src_;      // Source IP:port with hostname
-  std::string dst_;      // Dest IP:port with hostname
+  double timestamp_;        // Seconds from start (0 for live mode)
+  std::string transport_;   // Transport layer: TCP, UDP, ICMP, etc.
+  std::string application_; // Application layer: HTTPS, DNS, mDNS, etc.
+  std::string src_;         // Source IP:port with hostname
+  std::string dst_;         // Dest IP:port with hostname
   size_t bytes_;
   std::string dissection_; // Optional protocol dissection info
 };
