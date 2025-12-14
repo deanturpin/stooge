@@ -613,20 +613,18 @@ void renderer::render_loop() {
                      : current_view == 2 ? "HOSTNAMES"
                                          : "ENDPOINTS";
 
-    // Add pause indicator if paused
-    auto status_suffix = paused ? " [PAUSED]" : "";
-
     // Use fixed-width formatting to reduce jumpiness
     // Consolidated header: title, help text, and view name on one line
     auto title_line = hbox({
         text(std::format(
             "{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
-            "| DNS: {:3} | \u2190\u2192=view SPACE=pause q/ESC=quit{}",
+            "| DNS: {:3} | \u2190\u2192=view SPACE=pause q/ESC=quit",
             spinner, mode_str, time_display, total_packets, pps, bps_str,
-            dns_queries, status_suffix)) |
+            dns_queries)) |
             bold | color(Color::Cyan),
         filler(),
-        text(view_name) | bold | color(paused ? Color::Red : Color::Yellow),
+        text(std::format("{}{}", view_name, paused ? " [PAUSED]" : "")) | bold |
+            color(paused ? Color::Red : Color::Yellow),
     });
 
     // Build hostname list (aggregated by hostname with packet counts)
