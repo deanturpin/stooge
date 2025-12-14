@@ -117,6 +117,9 @@ constexpr auto ICMPV6_NEIGHBOUR_ADVERTISEMENT = 136;
 constexpr auto ICMP_HEADER_SIZE = 8uz;
 constexpr auto ICMPV6_HEADER_SIZE = 8uz;
 
+// 802.1Q VLAN constants (ETHERTYPE_VLAN is defined in net/ethernet.h)
+constexpr auto VLAN_HEADER_SIZE = 4uz; // TCI (2 bytes) + EtherType (2 bytes)
+
 // Constexpr protocol validation helpers
 constexpr bool is_tcp_protocol(int protocol) { return protocol == IPPROTO_TCP; }
 
@@ -182,6 +185,7 @@ struct packet_info {
   size_t length_ = 0uz;
   const uint8_t *payload_ = nullptr; // Application-layer payload
   size_t payload_length_ = 0uz;
+  uint16_t vlan_id_ = 0; // 802.1Q VLAN ID (0 = untagged)
 };
 
 // Helper: Parse IPv4 packet
@@ -512,6 +516,39 @@ std::optional<packet_info> parse_packet(const u_char *packet,
 
   // Route to appropriate parser based on EtherType
   switch (ether_type) {
+  case ETHERTYPE_VLAN: { // 0x8100 - 802.1Q VLAN tag
+    // Verify we have complete VLAN header
+    if (header->caplen < header_size + VLAN_HEADER_SIZE)
+      return std::nullopt;
+
+    // VLAN header structure (4 bytes):
+    // - TCI (Tag Control Information): 2 bytes
+    //   - Priority (3 bits)
+    //   - DEI (1 bit)
+    //   - VLAN ID (12 bits)
+    // - EtherType: 2 bytes (inner protocol)
+    auto vlan_header = packet + header_size;
+    auto tci = uint16_t((vlan_header[0] << 8) | vlan_header[1]);
+    auto vlan_id = tci & 0x0FFF; // Extract 12-bit VLAN ID
+    auto inner_ethertype = uint16_t((vlan_header[2] << 8) | vlan_header[3]);
+
+    // Create modified Ethernet header with inner EtherType
+    auto vlan_eth = *eth_ptr;
+    vlan_eth.ether_type = htons(inner_ethertype);
+
+    // Adjust packet pointer to skip VLAN header
+    auto inner_packet = packet + VLAN_HEADER_SIZE;
+    auto inner_header = *header;
+    inner_header.caplen -= VLAN_HEADER_SIZE;
+    inner_header.len -= VLAN_HEADER_SIZE;
+
+    // Recursively parse inner packet
+    auto result = parse_packet(inner_packet, &inner_header, is_sll);
+    if (result)
+      result->vlan_id_ = vlan_id;
+    return result;
+  }
+
   case ETHERTYPE_IP: // 0x0800 - IPv4
     return parse_ipv4(packet, header, eth_ptr);
 
@@ -800,7 +837,10 @@ int main(int argc, char *argv[]) {
             auto pkt = tui::packet_entry{};
             pkt.number_ = packet_count;
             pkt.timestamp_ = packet_offset;
-            pkt.protocol_ = info->protocol_;
+            pkt.protocol_ = info->vlan_id_ > 0
+                                ? std::format("{} [VLAN {}]", info->protocol_,
+                                              info->vlan_id_)
+                                : info->protocol_;
             pkt.src_ = format_endpoint(info->src_ip_, info->src_port_);
             pkt.dst_ = format_endpoint(info->dst_ip_, info->dst_port_);
             pkt.bytes_ = info->length_;
