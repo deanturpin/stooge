@@ -351,7 +351,10 @@ std::optional<result> runtime::dissect(const uint8_t *payload, size_t length,
 
   // Extract info from registry
   auto res = result{};
-  res.protocol_ = proto_name;
+  // Strip "_custom" suffix from protocol name for cleaner display
+  res.protocol_ = proto_name == "dns_custom"    ? "DNS"
+                  : proto_name == "http_custom" ? "HTTP"
+                                                : proto_name;
   lua_getfield(L_, LUA_REGISTRYINDEX, "dissector_info");
   if (lua_isstring(L_, -1))
     res.info_ = lua_tostring(L_, -1);

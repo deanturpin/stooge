@@ -289,13 +289,13 @@ std::optional<packet_info> parse_ipv4(const u_char *packet,
 
       // Format ICMP message based on type (use short names for table alignment)
       if (icmp_type == ICMP_ECHO_REQUEST)
-        info.protocol_ = "ICMP EchoReq";
+        info.protocol_ = "ICMP Req";
       else if (icmp_type == ICMP_ECHO_REPLY)
-        info.protocol_ = "ICMP EchoRep";
+        info.protocol_ = "ICMP Rep";
       else if (icmp_type == ICMP_DEST_UNREACHABLE)
-        info.protocol_ = "ICMP Unreach";
+        info.protocol_ = "ICMP Unr";
       else if (icmp_type == ICMP_TIME_EXCEEDED)
-        info.protocol_ = "ICMP TimeExc";
+        info.protocol_ = "ICMP TE";
       else
         info.protocol_ = std::format("ICMP T{}", icmp_type);
     } else {
