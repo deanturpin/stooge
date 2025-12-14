@@ -287,17 +287,17 @@ std::optional<packet_info> parse_ipv4(const u_char *packet,
       auto icmp_type = icmp_start[0];
       auto icmp_code = icmp_start[1];
 
-      // Format ICMP message based on type
+      // Format ICMP message based on type (use short names for table alignment)
       if (icmp_type == ICMP_ECHO_REQUEST)
-        info.protocol_ = "ICMP Echo Request (ping)";
+        info.protocol_ = "ICMP EchoReq";
       else if (icmp_type == ICMP_ECHO_REPLY)
-        info.protocol_ = "ICMP Echo Reply (pong)";
+        info.protocol_ = "ICMP EchoRep";
       else if (icmp_type == ICMP_DEST_UNREACHABLE)
-        info.protocol_ = "ICMP Dest Unreachable";
+        info.protocol_ = "ICMP Unreach";
       else if (icmp_type == ICMP_TIME_EXCEEDED)
-        info.protocol_ = "ICMP Time Exceeded";
+        info.protocol_ = "ICMP TimeExc";
       else
-        info.protocol_ = std::format("ICMP Type {}", icmp_type);
+        info.protocol_ = std::format("ICMP T{}", icmp_type);
     } else {
       info.protocol_ = "ICMP";
     }
@@ -308,19 +308,19 @@ std::optional<packet_info> parse_ipv4(const u_char *packet,
       auto igmp_start = packet + sizeof(struct ether_header) + ip_header_len;
       auto igmp_type = igmp_start[0];
 
-      // Format IGMP message based on type
+      // Format IGMP message based on type (use short names for table alignment)
       if (igmp_type == IGMP_MEMBERSHIP_QUERY)
-        info.protocol_ = "IGMP Membership Query";
+        info.protocol_ = "IGMP Query";
       else if (igmp_type == IGMP_V1_MEMBERSHIP_REPORT)
-        info.protocol_ = "IGMP v1 Membership Report";
+        info.protocol_ = "IGMP v1 Rep";
       else if (igmp_type == IGMP_V2_MEMBERSHIP_REPORT)
-        info.protocol_ = "IGMP v2 Membership Report";
+        info.protocol_ = "IGMP v2 Rep";
       else if (igmp_type == IGMP_V3_MEMBERSHIP_REPORT)
-        info.protocol_ = "IGMP v3 Membership Report";
+        info.protocol_ = "IGMP v3 Rep";
       else if (igmp_type == IGMP_LEAVE_GROUP)
-        info.protocol_ = "IGMP Leave Group";
+        info.protocol_ = "IGMP Leave";
       else
-        info.protocol_ = std::format("IGMP Type 0x{:02X}", igmp_type);
+        info.protocol_ = std::format("IGMP T{:02X}", igmp_type);
     } else {
       info.protocol_ = "IGMP";
     }
@@ -332,9 +332,9 @@ std::optional<packet_info> parse_ipv4(const u_char *packet,
       auto esp_start = packet + sizeof(struct ether_header) + ip_header_len;
       auto spi = (esp_start[0] << 24) | (esp_start[1] << 16) |
                  (esp_start[2] << 8) | esp_start[3];
-      info.protocol_ = std::format("IPSec ESP (SPI: 0x{:08X})", spi);
+      info.protocol_ = std::format("ESP {:08X}", spi);
     } else {
-      info.protocol_ = "IPSec ESP";
+      info.protocol_ = "ESP";
     }
   } else if (iph->ip_p == IPPROTO_AH) {
     // AH - show SPI (Security Parameter Index)
@@ -344,9 +344,9 @@ std::optional<packet_info> parse_ipv4(const u_char *packet,
       auto ah_start = packet + sizeof(struct ether_header) + ip_header_len;
       auto spi = (ah_start[4] << 24) | (ah_start[5] << 16) |
                  (ah_start[6] << 8) | ah_start[7];
-      info.protocol_ = std::format("IPSec AH (SPI: 0x{:08X})", spi);
+      info.protocol_ = std::format("AH {:08X}", spi);
     } else {
-      info.protocol_ = "IPSec AH";
+      info.protocol_ = "AH";
     }
   } else {
     // Other IP protocols
@@ -644,9 +644,9 @@ std::optional<packet_info> parse_packet(const u_char *packet,
     auto session_id = (pppoe_start[2] << 8) | pppoe_start[3];
 
     if (ether_type == ETHERTYPE_PPPOE_DISCOVERY)
-      info.protocol_ = "PPPoE Discovery";
+      info.protocol_ = "PPPoE Disc";
     else
-      info.protocol_ = std::format("PPPoE Session (ID: 0x{:04X})", session_id);
+      info.protocol_ = std::format("PPPoE {:04X}", session_id);
 
     info.length_ = header->len;
     return info;
@@ -671,11 +671,9 @@ std::optional<packet_info> parse_packet(const u_char *packet,
     auto bottom_of_stack = (label_word >> 8) & 0x1; // S bit
     auto ttl = label_word & 0xFF;                   // TTL (8 bits)
 
-    auto mpls_type =
-        (ether_type == ETHERTYPE_MPLS_UNICAST) ? "MPLS" : "MPLS Multicast";
-    info.protocol_ =
-        std::format("{} (Label: {}, TC: {}, TTL: {}{})", mpls_type, label, tc,
-                    ttl, bottom_of_stack ? "" : ", stacked");
+    auto mpls_type = (ether_type == ETHERTYPE_MPLS_UNICAST) ? "MPLS" : "MPLS-M";
+    info.protocol_ = std::format("{} L{} TC{} T{}{}", mpls_type, label, tc, ttl,
+                                 bottom_of_stack ? "" : "+");
 
     info.length_ = header->len;
     return info;
