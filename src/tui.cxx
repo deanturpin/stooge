@@ -670,17 +670,34 @@ void renderer::render_loop() {
 
     auto hostname_pane = vbox(hostname_elements) | ftxui::frame | flex;
 
-    // Return appropriate view with title line
+    // Build base view
+    auto base_view = Element{};
     if (current_view == 1) {
       // Packets view (full screen)
-      return vbox({title_line, separator(), packet_pane | flex});
+      base_view = vbox({title_line, separator(), packet_pane | flex});
     } else if (current_view == 2) {
       // Hostnames view (full screen)
-      return vbox({title_line, separator(), hostname_pane | flex});
+      base_view = vbox({title_line, separator(), hostname_pane | flex});
     } else {
       // Endpoints view (full screen, default)
-      return vbox({title_line, separator(), endpoint_pane | flex});
+      base_view = vbox({title_line, separator(), endpoint_pane | flex});
     }
+
+    // Add dramatic pause banner overlay when paused
+    if (paused) {
+      auto banner = vbox({
+                        filler(),
+                        hbox({filler(),
+                              text("  ▌▌  P A U S E D  ▐▐  ") | bold |
+                                  bgcolor(Color::Red) | color(Color::White),
+                              filler()}),
+                        filler(),
+                    }) |
+                    flex;
+      return dbox({base_view, banner});
+    }
+
+    return base_view;
   });
 
   // Capture component to handle keyboard shortcuts
