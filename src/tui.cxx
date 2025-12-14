@@ -428,18 +428,65 @@ void renderer::render_loop() {
   // View mode: 0=endpoints, 1=packets, 2=hostnames (cycle through three views)
   auto view_mode = std::atomic<int>{0};
 
+  // Pause state: when true, freeze display for easier copying
+  auto is_paused = std::atomic<bool>{false};
+
   auto component = Renderer([this, &last_packet_count, &force_refresh,
-                             &view_mode] {
+                             &view_mode, &is_paused] {
     using namespace ftxui;
 
-    // Get data from store
-    auto endpoints = store_->get_endpoints();
-    auto packets = store_->get_recent_packets(50); // Last 50 packets
-    auto total_packets = store_->get_total_packets();
-    auto time_display = store_->get_time_display();
-    auto is_live = store_->is_live();
-    auto pps = store_->get_packets_per_second();
-    auto bps = store_->get_bits_per_second();
+    // When paused, use cached data snapshot to freeze display
+    static auto cached_endpoints = std::vector<endpoint_stats>{};
+    static auto cached_packets = std::vector<packet_entry>{};
+    static auto cached_total_packets = 0uz;
+    static auto cached_time_display = std::string{};
+    static auto cached_is_live = false;
+    static auto cached_pps = 0.0;
+    static auto cached_bps = 0.0;
+    static auto cached_dns_queries = 0uz;
+
+    // Get data from store (or use cached data if paused)
+    auto paused = is_paused.load();
+    auto endpoints = std::vector<endpoint_stats>{};
+    auto packets = std::vector<packet_entry>{};
+    auto total_packets = 0uz;
+    auto time_display = std::string{};
+    auto is_live = false;
+    auto pps = 0.0;
+    auto bps = 0.0;
+    auto dns_queries = 0uz;
+
+    if (paused) {
+      // Use cached data when paused
+      endpoints = cached_endpoints;
+      packets = cached_packets;
+      total_packets = cached_total_packets;
+      time_display = cached_time_display;
+      is_live = cached_is_live;
+      pps = cached_pps;
+      bps = cached_bps;
+      dns_queries = cached_dns_queries;
+    } else {
+      // Fetch fresh data and update cache
+      endpoints = store_->get_endpoints();
+      packets = store_->get_recent_packets(50); // Last 50 packets
+      total_packets = store_->get_total_packets();
+      time_display = store_->get_time_display();
+      is_live = store_->is_live();
+      pps = store_->get_packets_per_second();
+      bps = store_->get_bits_per_second();
+      dns_queries = store_->get_dns_query_count();
+
+      // Update cache for next pause
+      cached_endpoints = endpoints;
+      cached_packets = packets;
+      cached_total_packets = total_packets;
+      cached_time_display = time_display;
+      cached_is_live = is_live;
+      cached_pps = pps;
+      cached_bps = bps;
+      cached_dns_queries = dns_queries;
+    }
 
     // Force component re-evaluation by checking if packet count changed
     auto current_count = total_packets;
@@ -560,25 +607,26 @@ void renderer::render_loop() {
     else
       bps_str = std::format("{:.0f} b/s", bps);
 
-    // Get DNS query count
-    auto dns_queries = store_->get_dns_query_count();
-
-    // Determine current view name
+    // Determine current view name and pause indicator
     auto current_view = view_mode.load();
     auto view_name = current_view == 1   ? "PACKETS"
                      : current_view == 2 ? "HOSTNAMES"
                                          : "ENDPOINTS";
 
+    // Add pause indicator if paused
+    auto status_suffix = paused ? " [PAUSED]" : "";
+
     // Use fixed-width formatting to reduce jumpiness
     // Consolidated header: title, help text, and view name on one line
     auto title_line = hbox({
-        text(std::format("{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
-                         "| DNS: {:3} | \u2190\u2192/SPACE=view q/ESC=quit",
-                         spinner, mode_str, time_display, total_packets, pps,
-                         bps_str, dns_queries)) |
+        text(std::format(
+            "{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
+            "| DNS: {:3} | \u2190\u2192=view SPACE=pause q/ESC=quit{}",
+            spinner, mode_str, time_display, total_packets, pps, bps_str,
+            dns_queries, status_suffix)) |
             bold | color(Color::Cyan),
         filler(),
-        text(view_name) | bold | color(Color::Yellow),
+        text(view_name) | bold | color(paused ? Color::Red : Color::Yellow),
     });
 
     // Build hostname list (aggregated by hostname with packet counts)
@@ -638,8 +686,8 @@ void renderer::render_loop() {
   });
 
   // Capture component to handle keyboard shortcuts
-  auto component_with_shortcuts =
-      CatchEvent(component, [this, &screen, &view_mode](Event event) {
+  auto component_with_shortcuts = CatchEvent(
+      component, [this, &screen, &view_mode, &is_paused](Event event) {
         // Left/Right arrows: switch between views
         if (event == Event::ArrowLeft) {
           auto current = view_mode.load();
@@ -652,10 +700,10 @@ void renderer::render_loop() {
           return true;
         }
 
-        // Spacebar: cycle through endpoints, packets, and hostnames views
+        // Spacebar: toggle pause (freeze display for easier copying)
         if (event == Event::Character(' ')) {
-          auto current = view_mode.load();
-          view_mode.store((current + 1) % 3);
+          auto current = is_paused.load();
+          is_paused.store(!current);
           return true;
         }
 
