@@ -691,16 +691,16 @@ void renderer::render_loop() {
               hbox({filler(),
                     vbox({
                         text(""),
-                        text("  ████████████████████████████████████  ") |
-                            bold | bgcolor(Color::Red) | color(Color::White),
-                        text("  ████                          ████  ") | bold |
+                        text("  ██████████████████████████████  ") | bold |
                             bgcolor(Color::Red) | color(Color::White),
-                        text("  ████   P A U S E D   ⏸️   ████  ") | bold |
+                        text("  ████                    ████  ") | bold |
                             bgcolor(Color::Red) | color(Color::White),
-                        text("  ████                          ████  ") | bold |
+                        text("  ████   P A U S E D   ████  ") | bold |
                             bgcolor(Color::Red) | color(Color::White),
-                        text("  ████████████████████████████████████  ") |
-                            bold | bgcolor(Color::Red) | color(Color::White),
+                        text("  ████                    ████  ") | bold |
+                            bgcolor(Color::Red) | color(Color::White),
+                        text("  ██████████████████████████████  ") | bold |
+                            bgcolor(Color::Red) | color(Color::White),
                         text(""),
                     }),
                     filler()}),
