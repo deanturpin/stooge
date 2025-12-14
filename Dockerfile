@@ -48,6 +48,9 @@ COPY --from=builder /app/build/stooge /app/stooge
 # Copy FTXUI runtime libraries from builder stage
 COPY --from=builder /usr/local/lib/libftxui* /usr/local/lib/
 
+# Copy Lua dissectors for protocol analysis
+COPY --from=builder /app/dissectors /app/dissectors
+
 # Copy recent commits file for splash screen
 COPY --from=builder /app/recent-commits.txt /app/recent-commits.txt
 
