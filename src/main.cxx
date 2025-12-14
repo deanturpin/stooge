@@ -120,6 +120,31 @@ constexpr auto ICMPV6_HEADER_SIZE = 8uz;
 // 802.1Q VLAN constants (ETHERTYPE_VLAN is defined in net/ethernet.h)
 constexpr auto VLAN_HEADER_SIZE = 4uz; // TCI (2 bytes) + EtherType (2 bytes)
 
+// IGMP message types (IP Protocol 2)
+constexpr auto IGMP_MEMBERSHIP_QUERY = 0x11;
+constexpr auto IGMP_V1_MEMBERSHIP_REPORT = 0x12;
+constexpr auto IGMP_V2_MEMBERSHIP_REPORT = 0x16;
+constexpr auto IGMP_V3_MEMBERSHIP_REPORT = 0x22;
+constexpr auto IGMP_LEAVE_GROUP = 0x17;
+constexpr auto IGMP_HEADER_SIZE = 8uz;
+
+// IPSec header sizes (IPPROTO_ESP=50 and IPPROTO_AH=51 defined in netinet/in.h)
+constexpr auto IPSEC_ESP_HEADER_SIZE = 8uz; // SPI (4) + Sequence (4)
+constexpr auto IPSEC_AH_HEADER_SIZE =
+    12uz; // Next Header (1) + Len (1) + Reserved (2) + SPI (4) + Sequence (4)
+
+// PPPoE EtherTypes
+constexpr auto ETHERTYPE_PPPOE_DISCOVERY = 0x8863;
+constexpr auto ETHERTYPE_PPPOE_SESSION = 0x8864;
+constexpr auto PPPOE_HEADER_SIZE =
+    6uz; // Ver/Type (1) + Code (1) + Session ID (2) + Length (2)
+
+// MPLS EtherTypes
+constexpr auto ETHERTYPE_MPLS_UNICAST = 0x8847;
+constexpr auto ETHERTYPE_MPLS_MULTICAST = 0x8848;
+constexpr auto MPLS_LABEL_SIZE =
+    4uz; // Label (20 bits) + TC (3) + S (1) + TTL (8)
+
 // Constexpr protocol validation helpers
 constexpr bool is_tcp_protocol(int protocol) { return protocol == IPPROTO_TCP; }
 
@@ -275,6 +300,53 @@ std::optional<packet_info> parse_ipv4(const u_char *packet,
         info.protocol_ = std::format("ICMP Type {}", icmp_type);
     } else {
       info.protocol_ = "ICMP";
+    }
+  } else if (iph->ip_p == 2) { // IGMP
+    auto ip_header_len = iph->ip_hl * 4;
+    if (header->caplen >=
+        sizeof(struct ether_header) + ip_header_len + IGMP_HEADER_SIZE) {
+      auto igmp_start = packet + sizeof(struct ether_header) + ip_header_len;
+      auto igmp_type = igmp_start[0];
+
+      // Format IGMP message based on type
+      if (igmp_type == IGMP_MEMBERSHIP_QUERY)
+        info.protocol_ = "IGMP Membership Query";
+      else if (igmp_type == IGMP_V1_MEMBERSHIP_REPORT)
+        info.protocol_ = "IGMP v1 Membership Report";
+      else if (igmp_type == IGMP_V2_MEMBERSHIP_REPORT)
+        info.protocol_ = "IGMP v2 Membership Report";
+      else if (igmp_type == IGMP_V3_MEMBERSHIP_REPORT)
+        info.protocol_ = "IGMP v3 Membership Report";
+      else if (igmp_type == IGMP_LEAVE_GROUP)
+        info.protocol_ = "IGMP Leave Group";
+      else
+        info.protocol_ = std::format("IGMP Type 0x{:02X}", igmp_type);
+    } else {
+      info.protocol_ = "IGMP";
+    }
+  } else if (iph->ip_p == IPPROTO_ESP) {
+    // ESP - show SPI (Security Parameter Index)
+    auto ip_header_len = iph->ip_hl * 4;
+    if (header->caplen >=
+        sizeof(struct ether_header) + ip_header_len + IPSEC_ESP_HEADER_SIZE) {
+      auto esp_start = packet + sizeof(struct ether_header) + ip_header_len;
+      auto spi = (esp_start[0] << 24) | (esp_start[1] << 16) |
+                 (esp_start[2] << 8) | esp_start[3];
+      info.protocol_ = std::format("IPSec ESP (SPI: 0x{:08X})", spi);
+    } else {
+      info.protocol_ = "IPSec ESP";
+    }
+  } else if (iph->ip_p == IPPROTO_AH) {
+    // AH - show SPI (Security Parameter Index)
+    auto ip_header_len = iph->ip_hl * 4;
+    if (header->caplen >=
+        sizeof(struct ether_header) + ip_header_len + IPSEC_AH_HEADER_SIZE) {
+      auto ah_start = packet + sizeof(struct ether_header) + ip_header_len;
+      auto spi = (ah_start[4] << 24) | (ah_start[5] << 16) |
+                 (ah_start[6] << 8) | ah_start[7];
+      info.protocol_ = std::format("IPSec AH (SPI: 0x{:08X})", spi);
+    } else {
+      info.protocol_ = "IPSec AH";
     }
   } else {
     // Other IP protocols
@@ -557,6 +629,57 @@ std::optional<packet_info> parse_packet(const u_char *packet,
 
   case 0x0806: // ARP
     return parse_arp(packet, header, eth_ptr);
+
+  case ETHERTYPE_PPPOE_DISCOVERY: // 0x8863 - PPPoE Discovery
+  case ETHERTYPE_PPPOE_SESSION: { // 0x8864 - PPPoE Session
+    // Verify we have complete PPPoE header
+    if (header->caplen < header_size + PPPOE_HEADER_SIZE)
+      return std::nullopt;
+
+    auto info = packet_info{};
+    std::memcpy(info.src_mac_.data(), eth_ptr->ether_shost, 6);
+    std::memcpy(info.dst_mac_.data(), eth_ptr->ether_dhost, 6);
+
+    auto pppoe_start = packet + header_size;
+    auto session_id = (pppoe_start[2] << 8) | pppoe_start[3];
+
+    if (ether_type == ETHERTYPE_PPPOE_DISCOVERY)
+      info.protocol_ = "PPPoE Discovery";
+    else
+      info.protocol_ = std::format("PPPoE Session (ID: 0x{:04X})", session_id);
+
+    info.length_ = header->len;
+    return info;
+  }
+
+  case ETHERTYPE_MPLS_UNICAST:     // 0x8847 - MPLS Unicast
+  case ETHERTYPE_MPLS_MULTICAST: { // 0x8848 - MPLS Multicast
+    // Verify we have at least one MPLS label
+    if (header->caplen < header_size + MPLS_LABEL_SIZE)
+      return std::nullopt;
+
+    auto info = packet_info{};
+    std::memcpy(info.src_mac_.data(), eth_ptr->ether_shost, 6);
+    std::memcpy(info.dst_mac_.data(), eth_ptr->ether_dhost, 6);
+
+    // Parse first MPLS label
+    auto mpls_start = packet + header_size;
+    auto label_word = (mpls_start[0] << 24) | (mpls_start[1] << 16) |
+                      (mpls_start[2] << 8) | mpls_start[3];
+    auto label = label_word >> 12;                  // Top 20 bits
+    auto tc = (label_word >> 9) & 0x7;              // Traffic Class (3 bits)
+    auto bottom_of_stack = (label_word >> 8) & 0x1; // S bit
+    auto ttl = label_word & 0xFF;                   // TTL (8 bits)
+
+    auto mpls_type =
+        (ether_type == ETHERTYPE_MPLS_UNICAST) ? "MPLS" : "MPLS Multicast";
+    info.protocol_ =
+        std::format("{} (Label: {}, TC: {}, TTL: {}{})", mpls_type, label, tc,
+                    ttl, bottom_of_stack ? "" : ", stacked");
+
+    info.length_ = header->len;
+    return info;
+  }
 
   default: // Unknown EtherType
     return parse_generic(packet, header, eth_ptr);
