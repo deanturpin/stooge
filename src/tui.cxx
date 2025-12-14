@@ -685,15 +685,28 @@ void renderer::render_loop() {
 
     // Add dramatic pause banner overlay when paused
     if (paused) {
-      auto banner = vbox({
-                        filler(),
-                        hbox({filler(),
-                              text("  ▌▌  P A U S E D  ▐▐  ") | bold |
-                                  bgcolor(Color::Red) | color(Color::White),
-                              filler()}),
-                        filler(),
-                    }) |
-                    flex;
+      auto banner =
+          vbox({
+              filler(),
+              hbox({filler(),
+                    vbox({
+                        text(""),
+                        text("  ████████████████████████████████████  ") |
+                            bold | bgcolor(Color::Red) | color(Color::White),
+                        text("  ████                          ████  ") | bold |
+                            bgcolor(Color::Red) | color(Color::White),
+                        text("  ████   P A U S E D   ⏸️   ████  ") | bold |
+                            bgcolor(Color::Red) | color(Color::White),
+                        text("  ████                          ████  ") | bold |
+                            bgcolor(Color::Red) | color(Color::White),
+                        text("  ████████████████████████████████████  ") |
+                            bold | bgcolor(Color::Red) | color(Color::White),
+                        text(""),
+                    }),
+                    filler()}),
+              filler(),
+          }) |
+          flex;
       return dbox({base_view, banner});
     }
 
