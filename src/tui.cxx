@@ -689,20 +689,8 @@ void renderer::render_loop() {
           vbox({
               filler(),
               hbox({filler(),
-                    vbox({
-                        text(""),
-                        text("  ██████████████████████████████  ") | bold |
-                            bgcolor(Color::Red) | color(Color::White),
-                        text("  ████                    ████  ") | bold |
-                            bgcolor(Color::Red) | color(Color::White),
-                        text("  ████   P A U S E D   ████  ") | bold |
-                            bgcolor(Color::Red) | color(Color::White),
-                        text("  ████                    ████  ") | bold |
-                            bgcolor(Color::Red) | color(Color::White),
-                        text("  ██████████████████████████████  ") | bold |
-                            bgcolor(Color::Red) | color(Color::White),
-                        text(""),
-                    }),
+                    text("    P A U S E D    ") | bold | bgcolor(Color::Red) |
+                        color(Color::White) | center,
                     filler()}),
               filler(),
           }) |
