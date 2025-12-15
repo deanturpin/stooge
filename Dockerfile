@@ -58,4 +58,4 @@ COPY --from=builder /app/recent-commits.txt /app/recent-commits.txt
 RUN ldconfig
 
 # Entry point - run stooge with splash screen wrapper
-ENTRYPOINT ["sh", "-c", "clear && figlet stooge && cat /etc/os-release && echo && cat /app/recent-commits.txt && echo && sleep 2 && exec /app/stooge \"$@\"", "--"]
+ENTRYPOINT ["sh", "-c", "clear && figlet stooge && cat /etc/os-release && echo && cat /app/recent-commits.txt 2>/dev/null || echo 'No git history' && echo && sleep 2 && exec /app/stooge \"$@\"", "--"]
