@@ -27,6 +27,10 @@ WORKDIR /app
 
 # Copy source files and build stooge
 COPY . .
+
+# Create recent-commits.txt if it doesn't exist (Makefile should create it)
+RUN test -f recent-commits.txt || echo "No git history available" > recent-commits.txt
+
 RUN cmake -B build && cmake --build build --parallel
 
 # Stage 2: Runtime - minimal image with only runtime dependencies
