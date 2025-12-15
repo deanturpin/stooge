@@ -36,7 +36,8 @@ std::string endpoint_stats::to_string() const {
   auto ip_str = ip_.empty() ? "-" : ip_;
 
   // Packets column before hostname to keep alignment consistent
-  return std::format("{:15} {:17} {:20} {:<7} {}", ip_str,
+  // IPv6 addresses can be up to 39 characters, IPv4 up to 15
+  return std::format("{:39} {:17} {:20} {:<7} {}", ip_str,
                      mac_str.substr(0, 17), vendor_str.substr(0, 20),
                      packet_count_, host_str);
 }
@@ -498,8 +499,9 @@ void renderer::render_loop() {
     endpoint_elements.reserve(endpoints.size() + 1);
 
     // Endpoint header (port and protocol removed, aggregated by MAC:IP)
+    // Address column widened to 39 chars for full IPv6 addresses
     endpoint_elements.push_back(
-        text(std::format("{:15} {:17} {:20} {:<7} {}", "Address", "MAC",
+        text(std::format("{:39} {:17} {:20} {:<7} {}", "Address", "MAC",
                          "Vendor", "Packets", "Hostname")) |
         bold | color(Color::White));
 
@@ -617,11 +619,10 @@ void renderer::render_loop() {
     // Use fixed-width formatting to reduce jumpiness
     // Consolidated header: title, help text, and view name on one line
     auto title_line = hbox({
-        text(std::format(
-            "{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
-            "| DNS: {:3} | \u2190\u2192=view SPACE=pause q/ESC=quit",
-            spinner, mode_str, time_display, total_packets, pps, bps_str,
-            dns_queries)) |
+        text(std::format("{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
+                         "| DNS: {:3} | <>=view SPACE=pause q/ESC=quit",
+                         spinner, mode_str, time_display, total_packets, pps,
+                         bps_str, dns_queries)) |
             bold | color(Color::Cyan),
         filler(),
         text(std::format("{}{}", view_name, paused ? " [PAUSED]" : "")) | bold |
