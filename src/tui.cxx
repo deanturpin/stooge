@@ -498,16 +498,31 @@ void renderer::render_loop() {
     auto endpoint_elements = std::vector<Element>{};
     endpoint_elements.reserve(endpoints.size() + 1);
 
-    // Endpoint header (port and protocol removed, aggregated by MAC:IP)
-    // Address column widened to 39 chars for full IPv6 addresses
+    // Calculate maximum address width for dynamic column sizing
+    auto max_addr_width = 7uz; // Minimum for "Address" header
+    for (const auto &ep : endpoints)
+      max_addr_width = std::max(max_addr_width, ep.ip_.length());
+
+    // Endpoint header with dynamic address column width
     endpoint_elements.push_back(
-        text(std::format("{:39} {:17} {:20} {:<7} {}", "Address", "MAC",
-                         "Vendor", "Packets", "Hostname")) |
+        text(std::format("{:<{}} {:17} {:20} {:<7} {}", "Address",
+                         max_addr_width, "MAC", "Vendor", "Packets",
+                         "Hostname")) |
         bold | color(Color::White));
 
     // Endpoint rows with vendor and IP version colourisation
     for (const auto &ep : endpoints) {
-      auto ep_text = text(ep.to_string());
+      // Format with dynamic address width
+      auto ep_str = std::format(
+          "{:<{}} {:17} {:20} {:<7} {}", ep.ip_.empty() ? "-" : ep.ip_,
+          max_addr_width,
+          ep.mac_address_.empty() ? "-" : ep.mac_address_.substr(0, 17),
+          (ep.vendor_.empty() || ep.vendor_ == "-") ? "-"
+                                                    : ep.vendor_.substr(0, 20),
+          ep.packet_count_,
+          (ep.hostname_.empty() || ep.hostname_ == ep.ip_) ? "-"
+                                                           : ep.hostname_);
+      auto ep_text = text(ep_str);
 
       // Detect IPv6 (contains ':') vs IPv4 (contains '.')
       auto is_ipv6 = ep.ip_.find(':') != std::string::npos;
