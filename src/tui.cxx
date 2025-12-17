@@ -560,18 +560,18 @@ void renderer::render_loop() {
     // Packet header with dynamic widths and separate transport/application
     // columns
     packet_elements.push_back(
-        text(std::format("{:6} {:8} {:9} {:9} {:<{}} {:<{}} {:6}", "#", "Time",
-                         "Transport", "App", "Source", max_src_width,
-                         "Destination", max_dst_width, "Bytes")) |
+        text(std::format("{:6} {:8} {:9} {:<{}} {:<{}} {:6} {}", "#", "Time",
+                         "Transport", "Source", max_src_width, "Destination",
+                         max_dst_width, "Bytes", "Application")) |
         bold | color(Color::White));
 
     // Packet rows with dynamic widths and protocol colourisation
     for (const auto &pkt : packets) {
       auto time_str = std::format("{:.3f}", pkt.timestamp_);
-      auto row = text(std::format("{:<6} {:>8} {:<9} {:<9} {:<{}} {:<{}} {:>6}",
+      auto row = text(std::format("{:<6} {:>8} {:<9} {:<{}} {:<{}} {:>6} {}",
                                   pkt.number_, time_str, pkt.transport_,
-                                  pkt.application_, pkt.src_, max_src_width,
-                                  pkt.dst_, max_dst_width, pkt.bytes_));
+                                  pkt.src_, max_src_width, pkt.dst_,
+                                  max_dst_width, pkt.bytes_, pkt.application_));
 
       // Detect IPv6 by checking if source contains multiple colons
       auto is_ipv6 = std::count(pkt.src_.begin(), pkt.src_.end(), ':') > 1;
