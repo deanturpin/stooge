@@ -302,9 +302,11 @@ void traffic_monitor::update_hostname(std::string_view ip,
                                       std::string_view hostname) {
   auto lock = std::scoped_lock{mutex_};
 
-  // Update all endpoints with this IP address
+  // Update all endpoints that have seen this IP address (sticky hostnames)
+  // Check all_ips_ set instead of just current ip_ to handle devices with
+  // changing IPs
   for (auto &[key, ep] : endpoints_) {
-    if (ep.ip_ == ip)
+    if (ep.all_ips_.contains(std::string{ip}))
       ep.hostname_ = hostname;
   }
 }
