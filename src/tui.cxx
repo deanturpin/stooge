@@ -32,7 +32,12 @@ std::string endpoint_stats::to_string() const {
 
   auto mac_str = mac_address_.empty() ? "-" : mac_address_;
   auto vendor_str = vendor_.empty() || vendor_ == "-" ? "-" : vendor_;
-  auto host_str = hostname_.empty() || hostname_ == ip_ ? "-" : hostname_;
+
+  // Check if hostname is actually a resolved name (not empty and not any of the
+  // IPs)
+  auto is_resolved_hostname =
+      !hostname_.empty() && !all_ips_.contains(hostname_);
+  auto host_str = is_resolved_hostname ? hostname_ : "-";
   auto ip_str = ip_.empty() ? "-" : ip_;
 
   // Packets column before hostname to keep alignment consistent
@@ -117,30 +122,33 @@ std::vector<endpoint_stats> traffic_monitor::get_endpoints() const {
     result.push_back(ep);
 
   // Sort: known vendors first, then resolved hostnames, then by packet count
-  std::stable_sort(
-      result.begin(), result.end(), [](const auto &a, const auto &b) {
-        auto a_has_vendor = !a.vendor_.empty() && a.vendor_ != "-";
-        auto b_has_vendor = !b.vendor_.empty() && b.vendor_ != "-";
-        auto a_has_hostname =
-            !a.hostname_.empty() && a.hostname_ != "-" && a.hostname_ != a.ip_;
-        auto b_has_hostname =
-            !b.hostname_.empty() && b.hostname_ != "-" && b.hostname_ != b.ip_;
+  std::stable_sort(result.begin(), result.end(),
+                   [](const auto &a, const auto &b) {
+                     auto a_has_vendor = !a.vendor_.empty() && a.vendor_ != "-";
+                     auto b_has_vendor = !b.vendor_.empty() && b.vendor_ != "-";
+                     // Check if hostname is a real resolved name (not empty,
+                     // not any IP)
+                     auto a_has_hostname = !a.hostname_.empty() &&
+                                           !a.all_ips_.contains(a.hostname_);
+                     auto b_has_hostname = !b.hostname_.empty() &&
+                                           !b.all_ips_.contains(b.hostname_);
 
-        // Priority 1: Known vendors first
-        if (a_has_vendor != b_has_vendor)
-          return a_has_vendor;
+                     // Priority 1: Known vendors first
+                     if (a_has_vendor != b_has_vendor)
+                       return a_has_vendor;
 
-        // Priority 2: Resolved hostnames (within same vendor group)
-        if (a_has_hostname != b_has_hostname)
-          return a_has_hostname;
+                     // Priority 2: Resolved hostnames (within same vendor
+                     // group)
+                     if (a_has_hostname != b_has_hostname)
+                       return a_has_hostname;
 
-        // Priority 3: Sort by packet count
-        if (a.packet_count_ != b.packet_count_)
-          return a.packet_count_ > b.packet_count_;
+                     // Priority 3: Sort by packet count
+                     if (a.packet_count_ != b.packet_count_)
+                       return a.packet_count_ > b.packet_count_;
 
-        // Priority 4: Tie-breaker by IP to prevent shuffling
-        return a.ip_ < b.ip_;
-      });
+                     // Priority 4: Tie-breaker by IP to prevent shuffling
+                     return a.ip_ < b.ip_;
+                   });
 
   return result;
 }
@@ -515,15 +523,16 @@ void renderer::render_loop() {
     // Endpoint rows with vendor and IP version colourisation
     for (const auto &ep : endpoints) {
       // Format with dynamic address width
+      // Check if hostname is real (not empty and not any of the IPs)
+      auto has_hostname =
+          !ep.hostname_.empty() && !ep.all_ips_.contains(ep.hostname_);
       auto ep_str = std::format(
           "{:<{}} {:17} {:20} {:<7} {}", ep.ip_.empty() ? "-" : ep.ip_,
           max_addr_width,
           ep.mac_address_.empty() ? "-" : ep.mac_address_.substr(0, 17),
           (ep.vendor_.empty() || ep.vendor_ == "-") ? "-"
                                                     : ep.vendor_.substr(0, 20),
-          ep.packet_count_,
-          (ep.hostname_.empty() || ep.hostname_ == ep.ip_) ? "-"
-                                                           : ep.hostname_);
+          ep.packet_count_, has_hostname ? ep.hostname_ : "-");
       auto ep_text = text(ep_str);
 
       // Detect IPv6 (contains ':') vs IPv4 (contains '.')
@@ -652,11 +661,11 @@ void renderer::render_loop() {
     // Aggregate endpoints by hostname
     auto hostname_map = std::map<std::string, size_t>{};
     for (const auto &ep : endpoints) {
-      auto hostname = ep.hostname_.empty() || ep.hostname_ == ep.ip_
-                          ? std::string{}
-                          : ep.hostname_;
-      if (!hostname.empty())
-        hostname_map[hostname] += ep.packet_count_;
+      // Only include if hostname is real (not empty and not any IP)
+      auto has_hostname =
+          !ep.hostname_.empty() && !ep.all_ips_.contains(ep.hostname_);
+      if (has_hostname)
+        hostname_map[ep.hostname_] += ep.packet_count_;
     }
 
     // Convert to vector and sort by packet count (descending)
