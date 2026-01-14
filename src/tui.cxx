@@ -1,6 +1,7 @@
 // Terminal UI implementation
 #include "tui.hxx"
 #include "network_utils.hxx"
+#include "version.hxx"
 #include <algorithm>
 #include <cctype>
 #include <ctime>
@@ -646,9 +647,9 @@ void renderer::render_loop() {
     // Consolidated header: title, help text, and view name on one line
     auto title_line = hbox({
         text(std::format("{} {:20} | {} | Packets: {:6} | {:6.1f} p/s | {:>11} "
-                         "| DNS: {:3} | <>=view SPACE=pause q/ESC=quit",
+                         "| DNS: {:3} | <>=view SPACE=pause q/ESC=quit | {}",
                          spinner, mode_str, time_display, total_packets, pps,
-                         bps_str, dns_queries)) |
+                         bps_str, dns_queries, version::git_commit_hash)) |
             bold | color(Color::Cyan),
         filler(),
         text(std::format("{}{}", view_name, paused ? " [PAUSED]" : "")) | bold |

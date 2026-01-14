@@ -1,0 +1,6 @@
+// Auto-generated version information
+#pragma once
+
+namespace version {
+constexpr auto git_commit_hash = "@GIT_COMMIT_HASH@";
+}

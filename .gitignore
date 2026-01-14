@@ -12,6 +12,7 @@ build/
 
 # Generated files
 recent-commits.txt
+version.hxx
 
 # IDE files
 .vscode/

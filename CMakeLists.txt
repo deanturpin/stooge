@@ -11,6 +11,27 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Get git commit hash for version tracking
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_COMMIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+
+# Fallback if not in git repo
+if(NOT GIT_COMMIT_HASH)
+    set(GIT_COMMIT_HASH "unknown")
+endif()
+
+# Generate version header
+configure_file(
+    ${CMAKE_SOURCE_DIR}/src/version.hxx.in
+    ${CMAKE_BINARY_DIR}/version.hxx
+    @ONLY
+)
+
 # Find libpcap for PCAP file parsing
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PCAP REQUIRED libpcap)
@@ -25,7 +46,7 @@ find_package(ftxui REQUIRED)
 add_executable(stooge src/main.cxx src/dns.cxx src/dissector.cxx src/tui.cxx src/oui.cxx src/network_utils.cxx)
 target_link_libraries(stooge ${PCAP_LIBRARIES} ${LUA_LIBRARIES}
     ftxui::screen ftxui::dom ftxui::component)
-target_include_directories(stooge PRIVATE ${PCAP_INCLUDE_DIRS} ${LUA_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(stooge PRIVATE ${PCAP_INCLUDE_DIRS} ${LUA_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/src ${CMAKE_BINARY_DIR})
 
 # Enable testing
 enable_testing()
