@@ -58,7 +58,7 @@ find_package(Catch2 3 REQUIRED)
 add_executable(stooge_tests tests/test_dns.cxx src/dns.cxx src/tui.cxx)
 target_link_libraries(stooge_tests PRIVATE Catch2::Catch2WithMain
     ftxui::screen ftxui::dom ftxui::component)
-target_include_directories(stooge_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(stooge_tests PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_BINARY_DIR})
 
 # Register tests with CTest
 include(CTest)
