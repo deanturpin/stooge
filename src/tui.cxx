@@ -12,6 +12,7 @@
 #include <ftxui/dom/elements.hpp>
 #include <print>
 #include <set>
+#include <string_view>
 #include <thread>
 
 namespace tui {

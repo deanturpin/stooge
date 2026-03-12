@@ -15,7 +15,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Build and install FTXUI (this layer gets cached separately from source changes)
-RUN git clone https://github.com/ArthurSonzogni/FTXUI.git /tmp/ftxui \
+# Pin to v6.1.9 - latest stable release (master has unreleased breaking changes)
+RUN git clone --depth 1 --branch v6.1.9 https://github.com/ArthurSonzogni/FTXUI.git /tmp/ftxui \
     && cd /tmp/ftxui \
     && mkdir build && cd build \
     && cmake .. \
